@@ -8,7 +8,8 @@
 仓库：[AIMixer/ComfyUI_MiniMaxH3_Director](https://github.com/AIMixer/ComfyUI_MiniMaxH3_Director)  
 
 **English** → [README_EN.md](README_EN.md)
-<img width="1263" height="806" alt="image" src="https://github.com/user-attachments/assets/69663cf0-1ea8-46cf-958b-92abf201571a" />
+
+![MiniMaxH3Director 工作流截图](docs/screenshot.png)
 
 ---
 
