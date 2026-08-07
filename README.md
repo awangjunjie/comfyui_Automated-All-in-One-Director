@@ -8,8 +8,7 @@
 仓库：[AIMixer/ComfyUI_MiniMaxH3_Director](https://github.com/AIMixer/ComfyUI_MiniMaxH3_Director)  
 
 **English** → [README_EN.md](README_EN.md)
-
-![MiniMaxH3Director 工作流截图](docs/screenshot.png)
+<img width="1263" height="806" alt="image" src="https://github.com/user-attachments/assets/69663cf0-1ea8-46cf-958b-92abf201571a" />
 
 ---
 
@@ -244,3 +243,6 @@ pip install -r comfyui_Automated-All-in-One-Director/requirements.txt
 - [MiniMax-AI](https://github.com/MiniMax-AI) — MiniMax H3 模型  
 - [Comfy-Org/MiniMax-H3](https://huggingface.co/Comfy-Org/MiniMax-H3) — 权重与文档  
 - 提示词规范对齐官方 [h3-prompt-writing](https://github.com/MiniMax-AI/MiniMax-H3/tree/main/skills/h3-prompt-writing)
+## 为爱发电，如果本项目对你有帮助，欢迎打赏支持，你的赞助会激励我持续维护迭代。
+<img width="600" height="900" alt="1786075489438" src="https://github.com/user-attachments/assets/7a87ddbb-03ff-4a63-b814-952c589affc3" /> <img width="600" height="900" alt="mm_facetoface_collect_qrcode_1786075514098" src="https://github.com/user-attachments/assets/6313aaf0-3893-4dea-baa1-fa9a794caf9e" />
+
