@@ -6,6 +6,7 @@
 **当前作者：若扶清**（QQ：3193470083）——在 [AI搅拌手 / AIMixer](https://github.com/AIMixer) 原作基础上参考并继续完善。
 
 仓库：[AIMixer/ComfyUI_MiniMaxH3_Director](https://github.com/AIMixer/ComfyUI_MiniMaxH3_Director)  
+
 **English** → [README_EN.md](README_EN.md)
 
 ![MiniMaxH3Director 工作流截图](docs/screenshot.png)
@@ -132,8 +133,8 @@
 
 ```bash
 cd ComfyUI/custom_nodes
-git clone https://github.com/AIMixer/ComfyUI_MiniMaxH3_Director.git
-pip install -r ComfyUI_MiniMaxH3_Director/requirements.txt
+git clone https://github.com/awangjunjie/comfyui_Automated-All-in-One-Director.git
+pip install -r comfyui_Automated-All-in-One-Director/requirements.txt
 ```
 
 重启 ComfyUI。
@@ -142,7 +143,7 @@ pip install -r ComfyUI_MiniMaxH3_Director/requirements.txt
 
 1. 打开 **ComfyUI Manager**
 2. **Install via Git URL**
-3. 填入 `https://github.com/AIMixer/ComfyUI_MiniMaxH3_Director.git`
+3. 填入 `https://github.com/awangjunjie/comfyui_Automated-All-in-One-Director.git`
 4. 重启 ComfyUI
 
 ---
@@ -229,7 +230,7 @@ pip install -r ComfyUI_MiniMaxH3_Director/requirements.txt
 |---|---|
 | **当前作者 / 维护者** | **若扶清** |
 | **作者 QQ** | **3193470083** |
-| **本仓库** | [ComfyUI_MiniMaxH3_Director](https://github.com/AIMixer/ComfyUI_MiniMaxH3_Director) |
+| **本仓库** | [comfyui_Automated-All-in-One-Director](https://github.com/awangjunjie/comfyui_Automated-All-in-One-Director) |
 
 本仓库在 [AI搅拌手 / AIMixer](https://github.com/AIMixer) 原有 MiniMax H3 导演台实现与文档思路上参考、整理并继续完善；感谢原作者的开源贡献。  
 原作者相关：QQ `3697688140` · 交流群 `551482703` / `425064221` / `559826331` · [B 站](https://space.bilibili.com/1997403556) · 姊妹插件 [ComfyUI_Bernini_Director](https://github.com/AIMixer/ComfyUI_Bernini_Director)

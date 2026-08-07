@@ -1,5 +1,5 @@
 [project]
-name = "ComfyUI_MiniMaxH3_Director"
+name = "comfyui_Automated-All-in-One-Director"
 description = "Multi-segment MiniMax H3 Director — official MiniMaxH3ImageToVideo / ReferenceToVideo pipeline."
 version = "1.0.0"
 license = {file = "LICENSE"}
