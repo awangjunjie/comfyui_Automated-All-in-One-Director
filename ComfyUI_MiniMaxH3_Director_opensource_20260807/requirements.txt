@@ -1,8 +1,0 @@
-# Source-video decode for v2v / timeline loading
-opencv-python-headless>=4.8
-
-# Source-audio extract for v2v/rv2v「使用原声」
-imageio-ffmpeg>=0.4
-
-# Smart shot split (智能分割)
-scenedetect>=0.6.4,<0.8
