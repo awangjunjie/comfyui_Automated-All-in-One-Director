@@ -6,9 +6,9 @@ license = {file = "LICENSE"}
 requires-python = ">=3.10"
 
 [project.urls]
-Repository = "https://github.com/AIMixer/ComfyUI_MiniMaxH3_Director"
+Repository = "https://github.com/awangjunjie/comfyui_Automated-All-in-One-Director"
 
 [tool.comfy]
 PublisherId = ""
-DisplayName = "ComfyUI MiniMax H3 Director"
+DisplayName = "comfyui_Automated-All-in-One-Director"
 Icon = ""
