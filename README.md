@@ -243,3 +243,7 @@ pip install -r ComfyUI_MiniMaxH3_Director/requirements.txt
 - [MiniMax-AI](https://github.com/MiniMax-AI) — MiniMax H3 模型  
 - [Comfy-Org/MiniMax-H3](https://huggingface.co/Comfy-Org/MiniMax-H3) — 权重与文档  
 - 提示词规范对齐官方 [h3-prompt-writing](https://github.com/MiniMax-AI/MiniMax-H3/tree/main/skills/h3-prompt-writing)
+## 为爱发电，如果本项目对你有帮助，欢迎打赏支持，你的赞助会激励我持续维护迭代。
+<img width="1260" height="1890" alt="1786075489438" src="https://github.com/user-attachments/assets/7a87ddbb-03ff-4a63-b814-952c589affc3" />
+<img width="1308" height="1781" alt="mm_facetoface_collect_qrcode_1786075514098" src="https://github.com/user-attachments/assets/6313aaf0-3893-4dea-baa1-fa9a794caf9e" />
+
