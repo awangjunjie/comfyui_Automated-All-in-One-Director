@@ -6,6 +6,7 @@
 **当前作者：若扶清**（QQ：3193470083）——在 [AI搅拌手 / AIMixer](https://github.com/AIMixer) 原作基础上参考并继续完善。
 
 仓库：[AIMixer/ComfyUI_MiniMaxH3_Director](https://github.com/AIMixer/ComfyUI_MiniMaxH3_Director)  
+
 **English** → [README_EN.md](README_EN.md)
 
 ![MiniMaxH3Director 工作流截图](docs/screenshot.png)
@@ -85,12 +86,7 @@
 
 ### ④ 参考图导演（非 fl2v / fl_chain）
 1. 启用参考图导演 → ① 生成生图提示词 → ② 生图预览 → ③ 确认注入
-2. **本地生图可一键切换**（完整版工作流节点「文生图模型切换」）：
-   - **A · SDXL**：`CheckpointLoaderSimple` 完整包
-   - **B · Z-Image-Turbo**：UNET + CLIP(`qwen_3_4b`/lumina2) + VAE(`ae`)
-   - **C · 自定义**：自行接 FLUX 等三线
-3. 未选支路懒加载不占显存；导演台「本地模型族」会随切换同步采样
-4. 勿把 MiniMax H3 视频权重接到生图口；本地不可用且已配云端时会自动回退云端 API
+2. 本地生图需接 SD/SDXL Checkpoint（不是 H3）
 3. 生图结果用于时间线 `<Picture N>`，不会误回写「给导演用的全局参考底图」槽
 
 ### ⑤ 首尾帧导演（fl2v / fl_chain）
@@ -137,8 +133,8 @@
 
 ```bash
 cd ComfyUI/custom_nodes
-git clone https://github.com/AIMixer/ComfyUI_MiniMaxH3_Director.git
-pip install -r ComfyUI_MiniMaxH3_Director/requirements.txt
+git clone https://github.com/awangjunjie/comfyui_Automated-All-in-One-Director.git
+pip install -r comfyui_Automated-All-in-One-Director/requirements.txt
 ```
 
 重启 ComfyUI。
@@ -147,7 +143,7 @@ pip install -r ComfyUI_MiniMaxH3_Director/requirements.txt
 
 1. 打开 **ComfyUI Manager**
 2. **Install via Git URL**
-3. 填入 `https://github.com/AIMixer/ComfyUI_MiniMaxH3_Director.git`
+3. 填入 `https://github.com/awangjunjie/comfyui_Automated-All-in-One-Director.git`
 4. 重启 ComfyUI
 
 ---
@@ -176,16 +172,20 @@ pip install -r ComfyUI_MiniMaxH3_Director/requirements.txt
 
 | 工作流 | 说明 |
 |--------|------|
-| `完整版_MiniMaxH3导演台.json` | **唯一**示例工作流：导演台 + 文生图 + 导出；任务模式在节点内切换 |
-
-完整版工作流文生图口 **只固定接 DreamShaperXL_Turbo**（节点「文生图 · DreamShaperXL（唯一）」直连 `ref_gen_*`；下拉已隐藏 ltx 等视频文件）。请重新加载最新 JSON，勿沿用画布里旧的 CheckpointLoader。
+| `完整版_MiniMaxH3导演台.json` | 完整版总工作流 |
+| `完整版_MiniMaxH3导演台_文生视频_t2v.json` | t2v |
+| `完整版_MiniMaxH3导演台_首尾帧_fl2v.json` | fl2v |
+| `完整版_MiniMaxH3导演台_参考主体_r2v.json` | r2v |
+| `完整版_MiniMaxH3导演台_视频改视频_v2v.json` | v2v |
+| `完整版_MiniMaxH3导演台_参考改视频_rv2v.json` | rv2v |
+| `minimax_h3_director_*.json` | 精简示例（同上各模式） |
 
 ---
 
 ## 快速开始
 
 1. 确认 ComfyUI ≥ **0.30.0**，能加载官方 MiniMax H3 节点  
-2. 加载 `example_workflows/完整版_MiniMaxH3导演台.json`  
+2. 加载 `example_workflows/` 中任一完整版 JSON  
 3. 接好 UNET / CLIP / Video VAE / Audio VAE  
 4. 在导演台内：选任务 → 写故事分镜（或手写各组提示词）→ 调时长 → Queue  
 5. 看 `report` 确认导出模式与段数；分段导出时检查 `output` 是否多文件  
@@ -230,7 +230,7 @@ pip install -r ComfyUI_MiniMaxH3_Director/requirements.txt
 |---|---|
 | **当前作者 / 维护者** | **若扶清** |
 | **作者 QQ** | **3193470083** |
-| **本仓库** | [ComfyUI_MiniMaxH3_Director](https://github.com/AIMixer/ComfyUI_MiniMaxH3_Director) |
+| **本仓库** | [comfyui_Automated-All-in-One-Director](https://github.com/awangjunjie/comfyui_Automated-All-in-One-Director) |
 
 本仓库在 [AI搅拌手 / AIMixer](https://github.com/AIMixer) 原有 MiniMax H3 导演台实现与文档思路上参考、整理并继续完善；感谢原作者的开源贡献。  
 原作者相关：QQ `3697688140` · 交流群 `551482703` / `425064221` / `559826331` · [B 站](https://space.bilibili.com/1997403556) · 姊妹插件 [ComfyUI_Bernini_Director](https://github.com/AIMixer/ComfyUI_Bernini_Director)
@@ -244,7 +244,6 @@ pip install -r ComfyUI_MiniMaxH3_Director/requirements.txt
 - [MiniMax-AI](https://github.com/MiniMax-AI) — MiniMax H3 模型  
 - [Comfy-Org/MiniMax-H3](https://huggingface.co/Comfy-Org/MiniMax-H3) — 权重与文档  
 - 提示词规范对齐官方 [h3-prompt-writing](https://github.com/MiniMax-AI/MiniMax-H3/tree/main/skills/h3-prompt-writing)
+## 为爱发电，如果本项目对你有帮助，欢迎打赏支持，你的赞助会激励我持续维护迭代。
+<img width="600" height="900" alt="1786075489438" src="https://github.com/user-attachments/assets/7a87ddbb-03ff-4a63-b814-952c589affc3" /> <img width="600" height="900" alt="mm_facetoface_collect_qrcode_1786075514098" src="https://github.com/user-attachments/assets/6313aaf0-3893-4dea-baa1-fa9a794caf9e" />
 
-## 许可证
-
-[Apache-2.0](LICENSE)
