@@ -1467,6 +1467,63 @@ def _blend_opening_toward_last_frame(
     return out
 
 
+# Pixel-perfect chain join: MiniMax keyframes are conditioning only — decoded
+# frame0 still drifts from the injected first_frame. Force-copy prev last frame.
+CHAIN_OPENING_LOCK_BLEND_FRAMES = 6
+CHAIN_OPENING_LOCK_BLEND_WEIGHT = 0.42
+
+
+def lock_chain_opening_frame(
+    decoded: torch.Tensor,
+    prev_tail: torch.Tensor | None,
+    *,
+    width: int | None = None,
+    height: int | None = None,
+    blend_frames: int = CHAIN_OPENING_LOCK_BLEND_FRAMES,
+    blend_weight: float = CHAIN_OPENING_LOCK_BLEND_WEIGHT,
+) -> torch.Tensor:
+    """Make next-shot frame0 identical to prev last frame; ease a few following frames.
+
+    Official MiniMax ``first_frame`` / ``minimax_keyframes`` guide sampling but do
+    not replace the decoded opening pixel. Without this lock, 链式连贯 still shows
+    a visible cut between 上镜尾帧 and 下镜首帧.
+    """
+    if (
+        prev_tail is None
+        or decoded is None
+        or int(getattr(decoded, "ndim", 0)) != 4
+        or int(decoded.shape[0]) < 1
+        or int(prev_tail.shape[0]) < 1
+    ):
+        return decoded
+
+    h = int(height if height and height > 0 else decoded.shape[1])
+    w = int(width if width and width > 0 else decoded.shape[2])
+    lock = fit_canvas(prev_tail[-1:].float(), w, h)
+    if int(decoded.shape[1]) != h or int(decoded.shape[2]) != w:
+        out = fit_canvas(decoded.float(), w, h)
+    else:
+        out = decoded.detach().float().clone()
+    lock = lock.to(device=out.device, dtype=out.dtype)
+    out[0:1] = lock
+
+    n = min(max(0, int(blend_frames)), int(out.shape[0]) - 1)
+    weight = max(0.0, min(1.0, float(blend_weight)))
+    for i in range(1, n + 1):
+        alpha = weight * (1.0 - float(i) / float(n + 1))
+        if alpha <= 1e-4:
+            continue
+        out[i : i + 1] = (out[i : i + 1] * (1.0 - alpha) + lock * alpha).clamp(0.0, 1.0)
+
+    log.info(
+        "Chain continuity: locked opening frame to prev tail (%dx%d, blend=%d)",
+        w,
+        h,
+        n,
+    )
+    return out.to(dtype=decoded.dtype)
+
+
 def trim_decoded_for_continuity(
     decoded: torch.Tensor,
     *,
@@ -1505,10 +1562,11 @@ def concat_continuous_chunks(
     segments: list[SegmentPlan],
     plan: DirectorPlan,
 ) -> torch.Tensor:
-    """Concatenate with exposure-only seam fix.
+    """Concatenate with seam pixel lock + exposure-only soften.
 
     Generation settling burn-in handles flash/pulse. Concat RGB morphs are OFF
-    (00035: body0/hold→pop caused 拖影 and stutter pulses).
+    (00035: body0/hold→pop caused 拖影 and stutter pulses), except a hard copy of
+    prev last → next first so 链式连贯 joins stay frame-accurate.
     """
     del segments
     if not chunks:
@@ -1521,6 +1579,20 @@ def concat_continuous_chunks(
         if CONTINUITY_HOLD_POP_ON_TAIL:
             left = _break_hold_pop_window(left, from_end=True)
         body = _break_hold_pop_window(chunks[i], from_end=False)
+        # Hard seam: next first frame must equal previous last frame.
+        if (
+            left is not None
+            and body is not None
+            and int(left.shape[0]) >= 1
+            and int(body.shape[0]) >= 1
+        ):
+            body = body.clone()
+            seam = fit_canvas(
+                left[-1:].float(),
+                int(body.shape[2]),
+                int(body.shape[1]),
+            ).to(device=body.device, dtype=body.dtype)
+            body[0:1] = seam
         if float(CONTINUITY_SPIKE_WEIGHT) > 0:
             body = _ease_opening_spikes(body)
         body = _soften_body0_toward_prev(body, left)

@@ -102,11 +102,11 @@ def segment_passthrough_chunk(plan: DirectorPlan, seg) -> torch.Tensor | None:
     return None
 
 
-def tensor_frame_to_jpeg_b64(frame: torch.Tensor) -> str:
+def tensor_frame_to_jpeg_b64(frame: torch.Tensor, *, quality: int = 78) -> str:
     arr = (frame.detach().cpu().clamp(0, 1).numpy() * 255).astype("uint8")
     img = Image.fromarray(arr)
     buf = io.BytesIO()
-    img.save(buf, format="JPEG", quality=88)
+    img.save(buf, format="JPEG", quality=int(quality))
     return base64.b64encode(buf.getvalue()).decode("ascii")
 
 

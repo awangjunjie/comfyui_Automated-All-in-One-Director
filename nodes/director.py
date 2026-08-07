@@ -145,15 +145,25 @@ def director_studio_inputs() -> dict:
         ),
         "ref_gen_model": (
             "MODEL",
-            {"tooltip": "文生图 UNET/Checkpoint（用于生成全局参考图，非 MiniMax H3）。"},
+            {
+                "tooltip": (
+                    "本地参考图/首尾帧生图用 MODEL。请接完整 SD1.5/SDXL Checkpoint"
+                    "（CheckpointLoaderSimple），不要用 MiniMax H3 或仅 UNET 的 FLUX。"
+                ),
+            },
         ),
         "ref_gen_clip": (
             "CLIP",
-            {"tooltip": "文生图 CLIP（与 ref_gen_model 配套）。"},
+            {
+                "tooltip": (
+                    "与 ref_gen_model 配套的 CLIP。若 Checkpoint 提示 no CLIP weights，"
+                    "说明该文件不含文本编码器——请换 SDXL 完整模型，或改用云端生图。"
+                ),
+            },
         ),
         "ref_gen_vae": (
             "VAE",
-            {"tooltip": "文生图 VAE（与 ref_gen_model 配套）。"},
+            {"tooltip": "与 ref_gen_model 配套的 VAE（SD/SDXL）。"},
         ),
     }
 

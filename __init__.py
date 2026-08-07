@@ -9,6 +9,7 @@ from .nodes.conditioning import (
     MiniMaxH3DirectorPlannerConditioning,
 )
 from .nodes.director import MiniMaxH3Director
+from .nodes.still_model_switch import MiniMaxH3StillCheckpointLoader, MiniMaxH3StillModelSwitch
 
 NODE_CLASS_MAPPINGS = {
     "MiniMaxH3Director": MiniMaxH3Director,
@@ -16,6 +17,8 @@ NODE_CLASS_MAPPINGS = {
     "ComfyMiniMaxH3Director": MiniMaxH3Director,
     "MiniMaxH3DirectorConditioning": MiniMaxH3DirectorConditioning,
     "MiniMaxH3DirectorPlannerConditioning": MiniMaxH3DirectorPlannerConditioning,
+    "MiniMaxH3StillModelSwitch": MiniMaxH3StillModelSwitch,
+    "MiniMaxH3StillCheckpointLoader": MiniMaxH3StillCheckpointLoader,
 }
 
 NODE_DISPLAY_NAME_MAPPINGS = {
@@ -23,6 +26,8 @@ NODE_DISPLAY_NAME_MAPPINGS = {
     "ComfyMiniMaxH3Director": "MiniMax H3 导演台（完整版）",
     "MiniMaxH3DirectorConditioning": "MiniMax H3 Director Conditioning",
     "MiniMaxH3DirectorPlannerConditioning": "MiniMax H3 Director Planner Conditioning",
+    "MiniMaxH3StillModelSwitch": "文生图模型切换（一键）",
+    "MiniMaxH3StillCheckpointLoader": "文生图 Checkpoint（仅SDXL）",
 }
 
 WEB_DIRECTORY = "./web/js"

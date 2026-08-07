@@ -292,26 +292,56 @@ def run_fl_frame_generation(
         and ref_gen_vae is not None
     )
     backend = resolve_gen_backend(timeline)
-    if backend == "cloud":
-        from .image_gen_api import merge_gen_api_fields, resolve_api_key
+    from .image_director import (
+        _cloud_still_ready,
+        _validate_still_checkpoint,
+        resolve_local_model_profile,
+    )
 
-        idir_cfg = merge_gen_api_fields(timeline["image_director"])
-        has_key = bool(resolve_api_key(
-            str(idir_cfg.get("gen_api_format") or ""),
-            str(idir_cfg.get("gen_api_key") or ""),
-        ))
-        can_gen = bool(ref_gen_enable) and bool(idir_cfg.get("gen_api_model")) and has_key
+    cloud_ok = _cloud_still_ready(timeline)
+    local_profile = resolve_local_model_profile(timeline, ref_gen_model)
+    local_err = ""
+    if backend == "local" and ref_gen_enable:
+        try:
+            _validate_still_checkpoint(
+                ref_gen_model, ref_gen_clip, ref_gen_vae, profile=local_profile
+            )
+        except ValueError as exc:
+            can_local = False
+            local_err = str(exc)
+
+    if backend == "cloud":
+        can_gen = bool(ref_gen_enable) and cloud_ok
     else:
         can_gen = bool(ref_gen_enable) and can_local
+
+    effective_backend = backend
+    if ref_gen_enable and backend == "local" and not can_local and cloud_ok:
+        log.warning(
+            "Local still unusable for fl2v (%s); auto-fallback to cloud API.",
+            local_err or "missing MODEL/CLIP/VAE",
+        )
+        effective_backend = "cloud"
+        can_gen = True
+        timeline.setdefault("image_director", {})["gen_backend_effective"] = "cloud"
+        timeline["image_director"]["last_gen_note"] = (
+            "本地文生图接线无效，首尾帧已改用云端。"
+            + (f" {local_err}" if local_err else "")
+        )
+
     if ref_gen_enable and not can_gen:
-        if backend == "cloud":
+        if effective_backend == "cloud" or backend == "cloud":
             raise ValueError(
                 "已开启首尾帧导演生图（云端 API），请填写生图模型与 API Key。"
             )
+        if local_err:
+            raise ValueError(
+                f"已开启首尾帧导演本地生图，但 Checkpoint 不可用：{local_err}"
+                " 也可把「生图后端」改为「云端 API」。"
+            )
         raise ValueError(
-            "已开启首尾帧导演生图，但未连接文生图 Checkpoint 的 "
-            "ref_gen_model / ref_gen_clip / ref_gen_vae。"
-            "或将生图后端改为「云端 API」。"
+            "已开启首尾帧导演生图，但未连接 ref_gen_model / ref_gen_clip / ref_gen_vae。"
+            "可切换：SDXL Checkpoint，或 Z-Image-Turbo / FLUX 三线接入；也可改用云端 API。"
         )
 
     gp = resolve_still_gen_params(
@@ -345,7 +375,7 @@ def run_fl_frame_generation(
                 )
             try:
                 init = None
-                if backend != "cloud":
+                if effective_backend != "cloud":
                     init = pick_fl_init_image(timeline, shot, kind=kind)
                     # If generating end and start already exists, bias toward start for consistency
                     if kind == "end" and init is None:
@@ -368,6 +398,7 @@ def run_fl_frame_generation(
                     denoise=gp["denoise"],
                     negative=gp["negative"],
                     init_image=init,
+                    force_backend=effective_backend,
                 )
                 previews.append(img)
                 rel = save_image_tensor_to_input(img, prefix=prefix)

@@ -34,10 +34,67 @@ _DIALOGUE_AND_LOCK_RULES = (
     "硬性规则："
     "① 凡出现说话/对白/画外音，必须标明具体语气（如温柔、急促、带哭腔、冷淡、愤怒等），"
     "禁止仅用「说道」或「语气复杂」模糊带过；"
-    "② 有全局布局/连续性/GLOBAL 时，每一组分镜都必须在综合多模态描述或详细描述开头回扣"
-    "角色外貌服装、主场景空间布局、画风光线等锁定信息，防止跨镜偏差；"
-    "仅允许剧情驱动的姿态/表情/站位/景别变化。"
+    "② 有全局布局/连续性/GLOBAL 时，每组分镜只需用**一两句短锁定**回扣角色外貌服装、主场景地点、画风光线"
+    "（写法：「沿用全局：……」），禁止把建立镜头/整段开场动作再演一遍；"
+    "③ 每组只写本镜**新推进**的可见动作与空间落点；禁止复述上一镜或后续镜已写过的动作、对白、运镜与情节点；"
+    "④ 每组仅允许一个连续镜头 `[镜头1]`，禁止在同一组内写 `[镜头2]`/`[镜头3]` 把整片故事塞进单组。"
 )
+
+# Extra anti-repeat block for one-pass multi-shot generation
+_ANTI_REPEAT_MULTI_SHOT = (
+    "【防重复·强制】各组是串联短片的不同时间段，不是同一段故事的重复扩写："
+    "相邻镜的情节点、主动作、对白、运镜必须明显不同；"
+    "禁止每组都从同一开场姿势/同一句对白/同一运镜重新起幅；"
+    "禁止把整片剧情摘要复制进每一组；"
+    "第 n 组只承接第 n−1 组结束状态继续向前，不要倒回去重演。"
+)
+
+
+def sanitize_segment_shot_prompt(prompt: str) -> str:
+    """Keep one continuous take per segment; strip multi-lens story dumps.
+
+    Prompt-director shots sometimes embed [镜头1][镜头2]… of the *whole* film
+    inside every group. Each group is sampled as its own clip, so that causes
+    visible repeated content across segments.
+    """
+    text = (prompt or "").strip()
+    if not text:
+        return ""
+
+    lens_re = re.compile(r"\[镜头\s*(\d+)\]")
+    matches = list(lens_re.finditer(text))
+    if len(matches) >= 2:
+        cut = matches[1].start()
+        kept = text[:cut].rstrip()
+        rest = text[cut:]
+        # Rescue trailing AV fields if the model only put them after [镜头2]+
+        for label in ("整体声景", "非叙事配乐"):
+            if re.search(rf"{label}\s*[:：]", kept):
+                continue
+            m = re.search(
+                rf"({label}\s*[:：][^\n]*(?:\n(?!综合多模|主体定义|摘要|保留分析|详细描述|整体声景|非叙事配乐|[【<\[]).*)*)",
+                rest,
+            )
+            if m:
+                kept = f"{kept}\n{m.group(1).strip()}".strip()
+        text = kept
+        log.info("sanitize_segment_shot_prompt: stripped [镜头2]+ multi-lens dump")
+
+    # Normalize the sole lens tag to [镜头1]
+    text = lens_re.sub("[镜头1]", text, count=1)
+    return text.strip()
+
+
+def _sanitize_shots(shots: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    out: list[dict[str, Any]] = []
+    for s in shots or []:
+        if not isinstance(s, dict):
+            continue
+        item = dict(s)
+        if item.get("prompt"):
+            item["prompt"] = sanitize_segment_shot_prompt(str(item["prompt"]))
+        out.append(item)
+    return out
 
 
 def _normalize_mode(mode: str | None) -> str:
@@ -51,12 +108,12 @@ def _shot_fields_blurb(mode: str) -> str:
             "主体定义：……\n"
             "摘要：……\n"
             "保留分析：……\n"
-            "详细描述：[镜头1] 沿用全局锁定……（含空间位置；有说话则写清语气）\n"
+            "详细描述：[镜头1] 沿用全局：……（一两句短锁定）→ 只写本镜新动作与空间落点；有说话则写清语气\n"
             "整体声景：……\n"
             "非叙事配乐：……"
         )
     return (
-        "综合多模态描述：[镜头1] 沿用全局锁定……（含空间位置；有说话则写清语气）\n"
+        "综合多模态描述：[镜头1] 沿用全局：……（一两句短锁定）→ 只写本镜新动作与空间落点；有说话则写清语气\n"
         "整体声景：……\n"
         "非叙事配乐：……"
     )
@@ -301,7 +358,7 @@ def _build_user_message(
             f"{fields}"
             "时长严格落在 TARGET_DURATION_SECONDS 内。"
             "写清本镜空间位置（左中右、前后景、相对参照物）；"
-            "开头回扣全局角色/场景/画风锁定；只推进本镜动作，不要整片复述。"
+            "开头用一两句短锁定回扣全局角色/场景/画风；只推进本镜动作，不要整片复述、不要写 [镜头2]。"
             f"{_DIALOGUE_AND_LOCK_RULES}"
             "全文使用中文，只输出最终提示词，不要解释。"
         )
@@ -394,8 +451,10 @@ def _build_story_split_message(
     lines.append(
         f"请一次写完：先写全局块，再写恰好 {n} 个分镜。"
         "全局块要保留并扩写上述全局/连续性/风格声景，写成可回扣的锁定条款；"
-        f"每组分镜开头回扣锁定信息并写清空间位置，情节推进且不重复。{_fields_instruction(mode)}"
+        f"每组分镜开头一两句短锁定 + 只写本镜新推进与空间位置，情节互不重复。"
+        f"{_fields_instruction(mode)}"
         f"{_DIALOGUE_AND_LOCK_RULES}"
+        f"{_ANTI_REPEAT_MULTI_SHOT}"
         "必须用下面分隔符（各占一行）切开：\n"
         f"{delim_lines}\n"
         "格式示例：\n"
@@ -472,9 +531,10 @@ def _build_groups_batch_message(
         f"{_fields_instruction(mode)}"
         "必须用下列分隔符（各占一行）切开：\n"
         f"{delim_lines}\n"
-        "每组可先写 label: / duration:，再写提示词；每组开头回扣全局锁定并写清空间位置。\n"
+        "每组可先写 label: / duration:，再写提示词；每组开头一两句短锁定，只扩写本组简述对应的新动作。\n"
         f"{_shot_fields_blurb(mode)}\n"
         f"{_DIALOGUE_AND_LOCK_RULES}"
+        f"{_ANTI_REPEAT_MULTI_SHOT}"
         "不要前言、不要 markdown。"
     )
     return "\n".join(lines)
@@ -581,7 +641,7 @@ def extract_global_and_shots(
             body = ""
 
     shots = parse_multi_shot_output(body if body else text, expected=expected)
-    return global_prompt, shots, global_meta
+    return global_prompt, _sanitize_shots(shots), global_meta
 
 
 def parse_multi_shot_output(text: str, expected: int | None = None) -> list[dict[str, Any]]:
@@ -1126,7 +1186,7 @@ def expand_prompt_groups(
         if _looks_expanded_prompt(source):
             kept.append({
                 "index": idx,
-                "prompt": source,
+                "prompt": sanitize_segment_shot_prompt(source),
                 "label": label,
                 "duration": duration,
             })
@@ -1221,7 +1281,7 @@ def expand_prompt_groups(
         )
         out.append({
             "index": int(g.get("index", i)),
-            "prompt": prompt,
+            "prompt": sanitize_segment_shot_prompt(prompt),
             "label": label,
             "duration": duration,
         })
@@ -1248,6 +1308,7 @@ def expand_prompt_groups(
             log.warning("global expand fallback failed: %s", exc)
             g_prompt = global_prompt or ""
 
+    out = _sanitize_shots(out)
     out.sort(key=lambda s: int(s.get("index", 0)))
     return {"shots": out, "global_prompt": g_prompt}
 
@@ -1348,6 +1409,7 @@ def expand_story_to_shots(
             log.warning("story_split global fallback failed: %s", exc)
             g_prompt = global_prompt or ""
 
+    shots = _sanitize_shots(shots)
     for i, s in enumerate(shots):
         s.setdefault("label", f"分镜{i + 1}")
         if not s.get("duration"):
@@ -1434,6 +1496,7 @@ def _build_story_auto_message(
         "……直到 <<<SHOT_N>>>。\n"
         f"节奏服务剧情：开场/推进/转折/收束；单镜时长严格 {d_lo:.1f}～{d_hi:.1f} 秒；"
         f"{_DIALOGUE_AND_LOCK_RULES}"
+        f"{_ANTI_REPEAT_MULTI_SHOT}"
         "不要前言、不要 markdown、不要解释。"
     )
     return "\n".join(lines)

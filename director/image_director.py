@@ -152,6 +152,9 @@ def default_image_director() -> dict:
         "gen_group_indices": [],
         # Still generation backend: local checkpoint vs cloud image API
         "gen_backend": "local",  # local | cloud
+        # Local model family profile — swap wiring + sampling defaults together.
+        # auto | sdxl | flux | z_image_turbo
+        "local_model_profile": "auto",
         "gen_api_format": "智谱 GLM",
         "gen_api_url": "https://open.bigmodel.cn/api/paas/v4",
         "gen_api_key": "",
@@ -442,6 +445,10 @@ def ensure_image_director(timeline: dict) -> dict:
     idir["enabled"] = bool(idir.get("enabled", False))
     idir["auto_inject"] = bool(idir.get("auto_inject", True))
     idir["generate_on_queue"] = bool(idir.get("generate_on_queue", False))
+    _prof = str(idir.get("local_model_profile") or "auto").strip().lower()
+    if _prof not in STILL_MODEL_PROFILES:
+        _prof = "auto"
+    idir["local_model_profile"] = _prof
     try:
         from .image_gen_api import merge_gen_api_fields
 
@@ -1279,6 +1286,323 @@ def inject_global_ref_tensor(timeline: dict, image: torch.Tensor, *, into_groups
     return timeline, rel
 
 
+def _model_type_hint(model) -> str:
+    """Best-effort model family name for clearer errors (SDXL / FLUX / Z-Image …)."""
+    try:
+        mt = getattr(getattr(model, "model", None), "model_type", None)
+        if mt is not None:
+            return str(getattr(mt, "name", None) or mt)
+    except Exception:
+        pass
+    try:
+        name = type(getattr(model, "model", model)).__name__
+        return name
+    except Exception:
+        return ""
+
+
+def _model_image_model_key(model) -> str:
+    """Read unet_config.image_model when present (flux / lumina2 / …)."""
+    try:
+        inner = getattr(model, "model", model)
+        cfg = getattr(inner, "model_config", None)
+        uc = getattr(cfg, "unet_config", None) or {}
+        if isinstance(uc, dict):
+            return str(uc.get("image_model") or "").strip().lower()
+    except Exception:
+        pass
+    return ""
+
+
+# Architectures that must never be used for Director still (ref) generation.
+_VIDEO_IMAGE_MODELS = frozenset({
+    "ltxav", "ltxv", "minimax_h3", "hunyuan_video", "wan2.1", "wan2.2",
+    "mochi_preview", "cosmos", "cosmos_predict2", "anima",
+})
+
+
+def is_video_model_for_still(model) -> bool:
+    """True if MODEL is a video DiT (H3 / LTX / Wan …) — not a T2I still model."""
+    im = _model_image_model_key(model)
+    if im in _VIDEO_IMAGE_MODELS or im.startswith("wan"):
+        return True
+    try:
+        cls = type(getattr(model, "model", model)).__name__.upper()
+    except Exception:
+        cls = ""
+    if any(k in cls for k in ("MINIMAX", "LTXAV", "LTXV", "HUNYUANVIDEO", "WANMODEL")):
+        return True
+    return False
+
+
+def detect_still_model_family(model) -> str:
+    """Return sdxl | flux | z_image | video | unknown from the connected MODEL."""
+    if model is not None and is_video_model_for_still(model):
+        return "video"
+    hint = (_model_type_hint(model) or "").upper()
+    try:
+        cls = type(getattr(model, "model", model)).__name__.upper()
+    except Exception:
+        cls = ""
+    image_model = _model_image_model_key(model)
+    blob = f"{hint} {cls} {image_model}".upper()
+    if any(k in blob for k in ("ZIMAGE", "Z_IMAGE", "Z-IMAGE")):
+        return "z_image"
+    if "LUMINA" in blob or image_model.startswith("lumina"):
+        return "z_image"
+    # LTX / H3 report ModelType.FLUX but image_model=ltxav — already handled as video.
+    if image_model in ("flux", "flux2") or (hint == "FLUX" and image_model in ("", "flux", "flux2")):
+        return "flux"
+    if "FLUX" in cls and image_model in ("", "flux", "flux2"):
+        return "flux"
+    if "SDXL" in blob or hint in ("EPS", "V_PREDICTION", "EDM"):
+        return "sdxl"
+    return "unknown"
+
+
+# Sampling + wiring hints for switchable local still models.
+STILL_MODEL_PROFILES: dict[str, dict] = {
+    "auto": {
+        "label": "自动检测",
+        "wire": "按已连接 MODEL 自动匹配采样；SDXL / FLUX / Z-Image 均可切换。",
+    },
+    "sdxl": {
+        "label": "SDXL / SD1.5",
+        "steps": 8,
+        "cfg": 2.0,
+        "sampler": "euler_ancestral",
+        "scheduler": "normal",
+        "width": 1024,
+        "height": 576,
+        "wire": "CheckpointLoaderSimple（完整包）→ MODEL+CLIP+VAE。换文件名即可换模型。",
+    },
+    "flux": {
+        "label": "FLUX",
+        "steps": 20,
+        "cfg": 1.0,
+        "sampler": "euler",
+        "scheduler": "simple",
+        "width": 1024,
+        "height": 1024,
+        "wire": "UNETLoader + DualCLIPLoader + VAELoader → 三线接入（勿用仅 UNET 的 CheckpointLoader）。",
+    },
+    "z_image_turbo": {
+        "label": "Z-Image-Turbo BF16",
+        "steps": 8,
+        "cfg": 1.0,
+        "sampler": "res_multistep",
+        "scheduler": "simple",
+        "width": 1024,
+        "height": 1024,
+        "wire": (
+            "UNETLoader: diffusion_models/z_image_turbo_bf16.safetensors；"
+            "CLIPLoader: text_encoders/qwen_3_4b.safetensors（type 选 lumina2）；"
+            "VAELoader: vae/ae.safetensors。三线接到 ref_gen_*。"
+        ),
+    },
+}
+
+
+def resolve_local_model_profile(timeline: dict, model=None) -> str:
+    """Resolve effective local profile key (never returns bare auto if model known)."""
+    ensure_image_director(timeline)
+    raw = str(timeline["image_director"].get("local_model_profile") or "auto").strip().lower()
+    aliases = {
+        "z-image": "z_image_turbo",
+        "zimage": "z_image_turbo",
+        "z_image": "z_image_turbo",
+        "z-image-turbo": "z_image_turbo",
+        "z_image_turbo_bf16": "z_image_turbo",
+        "sdxl_turbo": "sdxl",
+        "sd": "sdxl",
+        "sd15": "sdxl",
+    }
+    key = aliases.get(raw, raw)
+    if key not in STILL_MODEL_PROFILES:
+        key = "auto"
+    if key != "auto":
+        return key
+    fam = detect_still_model_family(model) if model is not None else "unknown"
+    if fam == "z_image":
+        return "z_image_turbo"
+    if fam == "flux":
+        return "flux"
+    if fam == "sdxl":
+        return "sdxl"
+    # video / unknown → keep auto (sampling left to UI; validation rejects video)
+    return "auto"
+
+
+def apply_still_profile_sampling(
+    *,
+    steps: int,
+    cfg: float,
+    sampler_name: str,
+    scheduler: str,
+    negative: str,
+    profile: str,
+    model=None,
+) -> tuple[int, float, str, str, str]:
+    """Soft-adjust sampling for Flux / Z-Image when profile or detection says so."""
+    key = profile
+    if key == "auto" or key not in STILL_MODEL_PROFILES:
+        fam = detect_still_model_family(model) if model is not None else "unknown"
+        if fam == "z_image":
+            key = "z_image_turbo"
+        elif fam == "flux":
+            key = "flux"
+        else:
+            return steps, cfg, sampler_name, scheduler, negative
+
+    use_steps = int(steps)
+    use_cfg = float(cfg)
+    use_sampler = str(sampler_name or "")
+    use_scheduler = str(scheduler or "")
+    use_neg = negative
+
+    if key == "z_image_turbo":
+        if use_cfg > 1.5:
+            use_cfg = 1.0
+        if use_sampler in ("euler_ancestral", "dpm_2_ancestral"):
+            use_sampler = "res_multistep"
+        if use_scheduler == "normal":
+            use_scheduler = "simple"
+        use_neg = (negative or "").strip()
+    elif key == "flux":
+        if use_cfg > 1.5:
+            use_cfg = 1.0
+        if use_sampler in ("euler_ancestral", "dpm_2_ancestral"):
+            use_sampler = "euler"
+        if use_scheduler == "normal":
+            use_scheduler = "simple"
+        use_neg = (negative or "").strip()
+
+    return use_steps, use_cfg, use_sampler, use_scheduler, use_neg
+
+
+def _clip_missing_error(model, *, profile: str = "auto") -> str:
+    """Actionable message when ref_gen_clip is missing."""
+    fam = detect_still_model_family(model)
+    hint = _model_type_hint(model)
+    im = _model_image_model_key(model)
+    diag = f"（检测: family={fam or 'unknown'} model_type={hint or '?'} image_model={im or '?'}）"
+
+    if fam == "video" or is_video_model_for_still(model):
+        return (
+            "文生图口接成了【视频模型】（如 LTX / MiniMax H3 / Wan），没有可用 CLIP，不能本地出参考图。"
+            "请把「文生图 A」Checkpoint 改回 DreamShaperXL_Turbo_v2_1.safetensors（或其它完整 SDXL），"
+            "或在「文生图模型切换」选 B·Z-Image-Turbo / 云端 API。"
+            "勿在 CheckpointLoader 里选 ltx-*.safetensors / minimax_h3_*。"
+            + diag
+        )
+
+    prefer = profile if profile in ("z_image_turbo", "flux", "sdxl") else ""
+    if not prefer:
+        if fam == "z_image":
+            prefer = "z_image_turbo"
+        elif fam == "flux":
+            prefer = "flux"
+        else:
+            prefer = "auto"
+    if prefer == "z_image_turbo":
+        return (
+            "本地 Z-Image 需要三条线：UNET + CLIP + VAE，当前缺 CLIP。"
+            "请 CLIPLoader 加载 qwen_3_4b.safetensors（type=lumina2）→ ref_gen_clip，"
+            "VAELoader 加载 ae.safetensors → ref_gen_vae。"
+            + diag
+        )
+    if prefer == "flux":
+        return (
+            "本地 FLUX 需要三条线：UNET + DualCLIP + VAE，当前缺 CLIP。"
+            "请 DualCLIPLoader → ref_gen_clip（勿只用 CheckpointLoader 加载仅 UNET 的 FLUX 文件）。"
+            + diag
+        )
+    if prefer == "sdxl":
+        return (
+            "本地 SDXL 请用 CheckpointLoaderSimple 加载【完整包】（同时输出 MODEL+CLIP+VAE）。"
+            "当前缺 CLIP：多半选成了视频/仅UNET 文件。请改选 DreamShaperXL_Turbo_v2_1.safetensors。"
+            + diag
+        )
+    return (
+        "CLIP 为空，本地生图无法编码提示词。"
+        "请确认「文生图模型切换」选 A 且 Checkpoint=DreamShaperXL；"
+        "或选 B·Z-Image 并接好三线；或改用云端 API。"
+        + diag
+    )
+
+
+def _validate_still_checkpoint(model, clip, vae, *, profile: str = "auto") -> None:
+    if model is None or vae is None:
+        raise ValueError(
+            "请连接文生图的 ref_gen_model / ref_gen_vae。"
+            "可切换：SDXL 完整 Checkpoint，或 FLUX / Z-Image-Turbo 的 UNET+文本编码器+VAE。"
+        )
+    if is_video_model_for_still(model):
+        im = _model_image_model_key(model)
+        raise ValueError(
+            f"ref_gen_model 是视频架构（image_model={im or '?'}），不能用于参考图文生图。"
+            "请在「文生图 A」选 DreamShaperXL_Turbo_v2_1.safetensors，"
+            "或切换到 B·Z-Image-Turbo / 云端 API。勿选 ltx / minimax_h3 视频权重。"
+        )
+    if clip is None:
+        raise ValueError(_clip_missing_error(model, profile=profile))
+    # CheckpointLoader may still emit a CLIP shell when weights are missing —
+    # try a cheap tokenize to catch hollow clips early.
+    try:
+        if hasattr(clip, "tokenize"):
+            clip.tokenize("test")
+    except Exception as exc:
+        raise ValueError(
+            "CLIP 无法编码文本（Checkpoint 可能无文本编码器权重）。"
+            "请改用完整 SDXL Checkpoint（DreamShaperXL），或 Z-Image / FLUX 三线接入。"
+            f"（{exc}）"
+        ) from exc
+
+
+def _latent_space_for_vae(vae, model=None) -> tuple[int, int]:
+    """Return (latent_channels, spatial_downscale) for empty-latent creation."""
+    channels = 4
+    downscale = 8
+    try:
+        channels = int(getattr(vae, "latent_channels", None) or channels)
+    except Exception:
+        pass
+    try:
+        ratio = getattr(vae, "downscale_ratio", None)
+        if isinstance(ratio, (int, float)) and int(ratio) > 0:
+            downscale = int(ratio)
+        elif callable(ratio):
+            # some VAEs expose downscale as method — keep default
+            pass
+    except Exception:
+        pass
+    try:
+        if model is not None and hasattr(model, "get_model_object"):
+            lf = model.get_model_object("latent_format")
+            if lf is not None:
+                channels = int(getattr(lf, "latent_channels", channels) or channels)
+    except Exception:
+        pass
+    return max(1, channels), max(1, downscale)
+
+
+def _make_empty_latent(model, vae, width: int, height: int, batch_size: int = 1) -> dict:
+    """Create empty latent matching the connected VAE/model (SDXL=4ch, Flux=16ch, …)."""
+    import comfy.model_management as model_management
+
+    channels, downscale = _latent_space_for_vae(vae, model)
+    # Align pixel size to latent grid
+    step = max(8, downscale)
+    w = max(step, int(width) // step * step)
+    h = max(step, int(height) // step * step)
+    latent = torch.zeros(
+        [batch_size, channels, h // downscale, w // downscale],
+        device=model_management.intermediate_device(),
+        dtype=model_management.intermediate_dtype(),
+    )
+    return {"samples": latent, "downscale_ratio_spacial": downscale}
+
+
 def generate_still_with_checkpoint(
     *,
     model,
@@ -1299,23 +1623,27 @@ def generate_still_with_checkpoint(
     """Generate a still IMAGE using a connected checkpoint (SD/SDXL etc.), not MiniMax H3."""
     prompt = (prompt or "").strip()
     if not prompt:
-        raise ValueError("\u53c2\u8003\u56fe\u63d0\u793a\u8bcd\u4e3a\u7a7a\uff0c\u65e0\u6cd5\u751f\u56fe")
-    if model is None or clip is None or vae is None:
-        raise ValueError(
-            "\u8bf7\u8fde\u63a5 ref_gen_model / ref_gen_clip / ref_gen_vae"
-            "\uff08\u6587\u751f\u56fe Checkpoint\uff09"
-        )
+        raise ValueError("参考图提示词为空，无法生图")
+    _validate_still_checkpoint(model, clip, vae)
 
-    from nodes import CLIPTextEncode, EmptyLatentImage, KSampler, VAEDecode, VAEEncode
+    from nodes import CLIPTextEncode, KSampler, VAEDecode, VAEEncode
     import torch.nn.functional as F
 
-    w = max(64, int(width) // 8 * 8)
-    h = max(64, int(height) // 8 * 8)
+    _, downscale = _latent_space_for_vae(vae, model)
+    step = max(8, int(downscale))
+    w = max(step, int(width) // step * step)
+    h = max(step, int(height) // step * step)
     neg = (negative or "").strip() or default_image_director()["negative"]
     dn = float(denoise)
 
-    positive = CLIPTextEncode().encode(clip, prompt)[0]
-    negative_cond = CLIPTextEncode().encode(clip, neg)[0]
+    try:
+        positive = CLIPTextEncode().encode(clip, prompt)[0]
+        negative_cond = CLIPTextEncode().encode(clip, neg)[0]
+    except Exception as exc:
+        raise ValueError(
+            f"本地生图 CLIP 编码失败：{exc}。"
+            "请确认 ref_gen_clip 来自完整 SD/SDXL Checkpoint（非 MiniMax H3 / 非空 CLIP）。"
+        ) from exc
 
     if init_image is not None:
         # img2img from director guide (character/scene). Auto soft denoise if still at 1.0.
@@ -1326,28 +1654,38 @@ def generate_still_with_checkpoint(
             t = torch.tensor(t)
         if t.ndim == 3:
             t = t.unsqueeze(0)
-        t = t.detach().cpu().float().clamp(0, 1)
+        t = t.detach().float().clamp(0, 1)
         # Resize to target
         x = t.permute(0, 3, 1, 2)
         x = F.interpolate(x, size=(h, w), mode="bilinear", align_corners=False)
         t = x.permute(0, 2, 3, 1)
-        latent = VAEEncode().encode(vae, t)[0]
+        try:
+            latent = VAEEncode().encode(vae, t)[0]
+        except Exception as exc:
+            raise ValueError(f"本地生图 VAE 编码失败（img2img）：{exc}") from exc
     else:
-        latent = EmptyLatentImage().generate(w, h, 1)[0]
+        latent = _make_empty_latent(model, vae, w, h, 1)
 
-    sampled = KSampler().sample(
-        model,
-        int(seed),
-        int(steps),
-        float(cfg),
-        sampler_name,
-        scheduler,
-        positive,
-        negative_cond,
-        latent,
-        float(dn),
-    )[0]
-    images = VAEDecode().decode(vae, sampled)[0]
+    try:
+        sampled = KSampler().sample(
+            model,
+            int(seed),
+            int(steps),
+            float(cfg),
+            sampler_name,
+            scheduler,
+            positive,
+            negative_cond,
+            latent,
+            float(dn),
+        )[0]
+        images = VAEDecode().decode(vae, sampled)[0]
+    except Exception as exc:
+        hint = _model_type_hint(model)
+        raise ValueError(
+            f"本地 Checkpoint 采样失败（{hint or 'unknown'}）：{exc}。"
+            "本地生图推荐 SD 1.5 / SDXL；FLUX 请改用云端 API。"
+        ) from exc
     if not isinstance(images, torch.Tensor):
         images = torch.tensor(images)
     if images.ndim == 3:
@@ -1361,6 +1699,23 @@ def resolve_gen_backend(timeline: dict) -> str:
     ensure_image_director(timeline)
     merge_gen_api_fields(timeline["image_director"])
     return normalize_gen_backend(timeline["image_director"].get("gen_backend"))
+
+
+def _cloud_still_ready(timeline: dict) -> bool:
+    """True when cloud image API is configured enough to run."""
+    from .image_gen_api import merge_gen_api_fields, resolve_api_key
+
+    ensure_image_director(timeline)
+    idir = merge_gen_api_fields(timeline["image_director"])
+    has_key = bool(resolve_api_key(
+        str(idir.get("gen_api_format") or ""),
+        str(idir.get("gen_api_key") or ""),
+    ))
+    return bool(idir.get("gen_api_model")) and has_key
+
+
+def _is_flux_like(model) -> bool:
+    return detect_still_model_family(model) in ("flux", "z_image")
 
 
 def generate_still(
@@ -1380,13 +1735,14 @@ def generate_still(
     denoise: float = 1.0,
     negative: str = "",
     init_image: torch.Tensor | None = None,
+    force_backend: str | None = None,
 ) -> torch.Tensor:
     """Dispatch still gen to local checkpoint or cloud image API."""
     from .image_gen_api import generate_still_via_api, merge_gen_api_fields
 
     ensure_image_director(timeline)
     idir = merge_gen_api_fields(timeline["image_director"])
-    backend = resolve_gen_backend(timeline)
+    backend = (force_backend or resolve_gen_backend(timeline) or "local").lower()
     if backend == "cloud":
         return generate_still_via_api(
             prompt=prompt,
@@ -1397,6 +1753,21 @@ def generate_still(
             width=int(width),
             height=int(height),
         )
+
+    profile = resolve_local_model_profile(timeline, ref_gen_model)
+    use_steps, use_cfg, use_sampler, use_scheduler, use_neg = apply_still_profile_sampling(
+        steps=steps,
+        cfg=cfg,
+        sampler_name=sampler_name,
+        scheduler=scheduler,
+        negative=negative,
+        profile=profile,
+        model=ref_gen_model,
+    )
+    if profile != "auto":
+        log.info("Local still profile=%s family=%s cfg=%s sampler=%s/%s",
+                 profile, detect_still_model_family(ref_gen_model), use_cfg, use_sampler, use_scheduler)
+
     return generate_still_with_checkpoint(
         model=ref_gen_model,
         clip=ref_gen_clip,
@@ -1405,12 +1776,12 @@ def generate_still(
         width=width,
         height=height,
         seed=seed,
-        steps=steps,
-        cfg=cfg,
-        sampler_name=sampler_name,
-        scheduler=scheduler,
+        steps=use_steps,
+        cfg=use_cfg,
+        sampler_name=use_sampler,
+        scheduler=use_scheduler,
         denoise=denoise,
-        negative=negative,
+        negative=use_neg,
         init_image=init_image,
     )
 
@@ -1568,28 +1939,64 @@ def run_auto_ref_generation(
         and ref_gen_vae is not None
     )
     backend = resolve_gen_backend(timeline)
-    if backend == "cloud":
-        from .image_gen_api import merge_gen_api_fields, resolve_api_key
+    cloud_ok = _cloud_still_ready(timeline)
+    local_profile = resolve_local_model_profile(timeline, ref_gen_model)
+    local_err = ""
+    if backend == "local" and ref_gen_enable:
+        log.info(
+            "Local still wires: model=%s clip=%s vae=%s family=%s profile=%s",
+            ref_gen_model is not None,
+            ref_gen_clip is not None,
+            ref_gen_vae is not None,
+            detect_still_model_family(ref_gen_model) if ref_gen_model is not None else "none",
+            local_profile,
+        )
+        try:
+            _validate_still_checkpoint(
+                ref_gen_model, ref_gen_clip, ref_gen_vae, profile=local_profile
+            )
+        except ValueError as exc:
+            can_local = False
+            local_err = str(exc)
 
-        idir_cfg = merge_gen_api_fields(timeline["image_director"])
-        has_key = bool(resolve_api_key(
-            str(idir_cfg.get("gen_api_format") or ""),
-            str(idir_cfg.get("gen_api_key") or ""),
-        ))
-        can_gen = bool(ref_gen_enable) and bool(idir_cfg.get("gen_api_model")) and has_key
+    if backend == "cloud":
+        can_gen = bool(ref_gen_enable) and cloud_ok
     else:
         can_gen = bool(ref_gen_enable) and can_local
+
+    # Local 不可用时，若云端已配置则回退（不静默换模型）。
+    effective_backend = backend
+    if ref_gen_enable and backend == "local" and not can_local and cloud_ok:
+        log.warning(
+            "Local still unusable (%s); auto-fallback to cloud API.",
+            local_err or "missing MODEL/CLIP/VAE",
+        )
+        effective_backend = "cloud"
+        can_gen = True
+        timeline.setdefault("image_director", {})["gen_backend_effective"] = "cloud"
+        timeline["image_director"]["last_gen_note"] = (
+            "本地文生图接线无效，已改用云端。"
+            + (f" {local_err}" if local_err else "")
+        )
+
     if ref_gen_enable and not can_gen and global_ref_image is None:
-        if backend == "cloud":
+        if effective_backend == "cloud" or backend == "cloud":
             raise ValueError(
                 "已开启参考图生图（云端 API），请填写生图模型与 API Key"
                 "（或设置环境变量 ZHIPU_API_KEY / OPENAI_API_KEY）。"
             )
+        if local_err:
+            raise ValueError(
+                f"{local_err} "
+                "【快速修复】「文生图 A」Checkpoint 请选 DreamShaperXL_Turbo_v2_1.safetensors"
+                "（不要选 ltx-*.safetensors / 视频权重）；切换节点保持「A · SDXL」。"
+                "或导演台把生图后端改为「云端 API」。"
+            )
         raise ValueError(
             "已开启「Queue 时生成全局参考图」，"
-            "但未连接文生图 Checkpoint 的 "
-            "ref_gen_model / ref_gen_clip / ref_gen_vae。"
-            "或将生图后端改为「云端 API」。"
+            "但未连接 ref_gen_model / ref_gen_clip / ref_gen_vae。"
+            "可切换本地模型：SDXL 完整 Checkpoint，或 Z-Image-Turbo / FLUX 三线接入；"
+            "也可将生图后端改为「云端 API」。"
         )
 
     def _gen_one(prompt: str, *, seed_off: int = 0, init_image=None, prefix: str = "mmh3_ref"):
@@ -1608,7 +2015,8 @@ def run_auto_ref_generation(
             scheduler=gp["scheduler"],
             denoise=gp["denoise"],
             negative=gp["negative"],
-            init_image=None if backend == "cloud" else init_image,
+            init_image=None if effective_backend == "cloud" else init_image,
+            force_backend=effective_backend,
         )
         preview_tensors.append(img)
         rel = save_image_tensor_to_input(img, prefix=prefix)
@@ -1669,7 +2077,12 @@ def run_auto_ref_generation(
         badge = custom_label or _ROLE_BADGE.get(role, role)
         seed_i += 1
 
-        if can_gen and _slot_already_filled(str(scope or ""), slot, seg_idx):
+        # stills_only / 「仅生参考图」必须强制重跑，否则云端已填槽后本地会全部 Skip。
+        if (
+            can_gen
+            and not stills_only
+            and _slot_already_filled(str(scope or ""), slot, seg_idx)
+        ):
             log.info(
                 "Skip %s %s slot %s (%s): already has image",
                 scope, role, slot, badge,

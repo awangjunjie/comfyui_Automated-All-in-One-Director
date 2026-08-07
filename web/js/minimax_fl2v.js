@@ -19,10 +19,18 @@ import {
 } from "./minimax_gen_timeline.js";
 
 export const FL2V_STYLES = `
-.bd-fl2v-detail-wrap{width:100%;box-sizing:border-box;display:flex;flex-direction:column;gap:8px}
-.bd-fl2v-hint{color:#aaa;font-size:11px;line-height:1.45;background:#181818;border:1px solid #333;border-radius:6px;padding:8px 10px}
+.bd-fl2v-detail-wrap{width:100%;box-sizing:border-box;display:flex;flex-direction:column;gap:8px;min-height:0}
+.bd-fl2v-detail-wrap.hidden{display:none!important}
+.bd-fl2v-hint{color:#aaa;font-size:11px;line-height:1.45;background:#181818;border:1px solid #333;border-radius:6px;padding:8px 10px;flex-shrink:0}
 .bd-fl2v-hint b{color:#4fff8f;font-weight:600}
-.bd-fl2v-shots{display:flex;flex-wrap:wrap;gap:10px;align-items:stretch}
+.bd-fl2v-shots{
+  display:flex;flex-wrap:wrap;gap:10px;align-items:stretch;align-content:flex-start;
+  max-height:min(52vh,560px);overflow-x:hidden;overflow-y:auto;overscroll-behavior:contain;
+  padding-right:2px;scrollbar-gutter:stable;min-height:0;
+}
+.bd-fl2v-shots::-webkit-scrollbar{width:8px}
+.bd-fl2v-shots::-webkit-scrollbar-thumb{background:#3a4458;border-radius:4px}
+.bd-fl2v-shots::-webkit-scrollbar-track{background:#161a22}
 .bd-fl2v-shot{width:220px;box-sizing:border-box;background:#1a1a1a;border:1px solid #333;border-radius:6px;padding:8px;display:flex;flex-direction:column;gap:6px;cursor:default;transition:border-color .15s,opacity .15s}
 .bd-fl2v-shot:hover{border-color:#555}
 .bd-fl2v-shot.selected{border-color:#4fff8f;box-shadow:0 0 0 1px rgba(79,255,143,.35)}
@@ -52,7 +60,7 @@ export const FL2V_STYLES = `
 .bd-fl2v-slot-wrap .x:hover{background:rgba(160,30,30,.95);color:#fff}
 .bd-fl2v-shot-row{display:flex;align-items:center;gap:6px;color:#ddd;font-size:11px}
 .bd-fl2v-shot-row input{width:56px}
-.bd-fl2v-detail{width:100%;box-sizing:border-box;display:flex;flex-direction:column;gap:6px;background:#1a1a1a;border:1px solid #333;border-radius:6px;padding:10px}
+.bd-fl2v-detail{width:100%;box-sizing:border-box;display:flex;flex-direction:column;gap:6px;background:#1a1a1a;border:1px solid #333;border-radius:6px;padding:10px;flex-shrink:0}
 .bd-fl2v-detail.hidden{display:none!important}
 .bd-fl2v-detail .bd-label{color:#888;font-size:10px;margin-top:2px}
 .bd-fl2v-detail textarea{width:100%;min-height:64px;background:#141414;border:1px solid #333;border-radius:4px;color:#eee;padding:6px;resize:vertical;font-size:11px;box-sizing:border-box;font-family:inherit;line-height:1.35}

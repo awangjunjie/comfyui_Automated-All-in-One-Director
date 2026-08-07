@@ -121,12 +121,22 @@ def run_minimax_conditioning(
     ref_images = ref_images or _reference_images_dict_from_kwargs(kwargs)
     ref_videos = _reference_videos_dict(ref_videos)
 
+    # first_frame hard lock (t2v / fl2v / i2v chain) must use ImageToVideo keyframes.
+    # Soft <Picture> refs alone cannot pin the decoded opening frame.
+    force_image_to_video = (
+        first_frame is not None
+        and task_key in {"t2v", "i2v", "fl2v", "fl_chain"}
+    )
+
     use_reference = (
-        task_key in {"r2v", "v2v", "rv2v"}
-        or ref_images
-        or ref_videos
-        or ref_audios
-        or ref_video_audios
+        not force_image_to_video
+        and (
+            task_key in {"r2v", "v2v", "rv2v"}
+            or ref_images
+            or ref_videos
+            or ref_audios
+            or ref_video_audios
+        )
     )
 
     if use_reference:

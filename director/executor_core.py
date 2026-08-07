@@ -42,9 +42,14 @@ from .segment_cache import load_segment_cache, save_segment_cache
 from .segment_continuity import (
     concat_continuous_chunks,
     is_continuity_active,
+    lock_chain_opening_frame,
     resolve_prev_segment_output,
 )
-from .vram_cleanup import cleanup_segment_vram
+from .vram_cleanup import (
+    cleanup_after_decode,
+    cleanup_segment_vram,
+    prepare_vram_for_decode,
+)
 
 log = logging.getLogger("ComfyUI-MiniMaxH3-Director.director.core")
 
@@ -59,13 +64,34 @@ def _unpack_node_output(out):
     raise RuntimeError(f"Unexpected node output: {type(out)!r}")
 
 
-def _decode_av_latent(samples, vae, audio_vae, *, decode_audio: bool = True):
+def _decode_av_latent(
+    samples,
+    vae,
+    audio_vae,
+    *,
+    decode_audio: bool = True,
+    use_tiled: bool = False,
+):
     from comfy_extras.nodes_lt import LTXVSeparateAVLatent
-    from nodes import VAEDecode
+    from nodes import VAEDecode, VAEDecodeTiled
 
     sep = LTXVSeparateAVLatent.execute(samples)
     video_latent, audio_latent = _unpack_node_output(sep)[:2]
-    images, = VAEDecode().decode(vae, video_latent)
+
+    if use_tiled:
+        # Smaller temporal windows: less peak VRAM on MiniMax / LTX-style video VAEs.
+        log.info("AV decode: tiled VAE (tile=512, temporal=32) for low VRAM")
+        images, = VAEDecodeTiled().decode(
+            vae,
+            video_latent,
+            tile_size=512,
+            overlap=64,
+            temporal_size=32,
+            temporal_overlap=8,
+        )
+    else:
+        images, = VAEDecode().decode(vae, video_latent)
+
     if not decode_audio or audio_vae is None:
         return images, empty_audio_dict()
     try:
@@ -76,6 +102,20 @@ def _decode_av_latent(samples, vae, audio_vae, *, decode_audio: bool = True):
     audio_out = VAEDecodeAudio.execute(audio_vae, audio_latent)
     audio = _unpack_node_output(audio_out)[0]
     return images, audio
+
+
+def _preview_frame_indices(frame_count: int, max_frames: int = 24) -> list[int]:
+    """Evenly sample preview frames (always include first/last). Caps CPU stall after decode."""
+    n = max(0, int(frame_count))
+    if n <= 0:
+        return []
+    limit = max(1, int(max_frames))
+    if n <= limit:
+        return list(range(n))
+    idxs = {0, n - 1}
+    for i in range(1, limit - 1):
+        idxs.add(int(round(i * (n - 1) / (limit - 1))))
+    return sorted(idxs)
 
 
 def _ref_tensor_from_seg_refs(refs, index: int) -> torch.Tensor | None:
@@ -148,9 +188,8 @@ def _build_minimax_inputs(
             except Exception as exc:
                 log.warning("t2v prev_tail inject failed: %s", exc)
     elif task_key in {"i2v", "r2v"}:
-        # Pure reference: ReferenceToVideo + <Picture N>. First/last lock is fl2v only.
-        # When chain continuity is on, Picture 1 is reserved for prev-shot last frame;
-        # user refs (stored at 1–8) stay as Picture 2–9.
+        # i2v: soft refs via ReferenceToVideo; with chain → hard first_frame (ImageToVideo).
+        # r2v: soft <Picture N>; chain reserves Picture 1 + post-decode pixel lock.
         ref_kwargs = refs_to_kwargs_for_context(task_key, seg.refs)
         ref_images = {}
         for key, tensor in ref_kwargs.items():
@@ -165,20 +204,30 @@ def _build_minimax_inputs(
         ):
             try:
                 chain_frame = fit_canvas(prev_tail[-1:].clone(), ctx_w, ctx_h)
-                # Drop any user image in slot 0 — reserved for chain first-frame.
+                # Drop any user image in slot 0 — reserved for chain handoff.
                 ref_images = {
                     k: v
                     for k, v in (ref_images or {}).items()
                     if k != "ref_image_0"
                 }
-                ref_images = {"ref_image_0": chain_frame, **ref_images}
-                log.info(
-                    "%s seg#%d: injected prev last-frame as <Picture 1> / ref_image_0",
-                    task_key,
-                    int(getattr(seg, "index", 0)) + 1,
-                )
+                if task_key == "i2v":
+                    # Hard keyframe on fl2va path — soft Picture alone cannot pin frame0.
+                    first_frame = chain_frame
+                    if not ref_images:
+                        ref_images = None
+                    log.info(
+                        "i2v seg#%d: injected prev last-frame as first_frame hard lock",
+                        int(getattr(seg, "index", 0)) + 1,
+                    )
+                else:
+                    ref_images = {"ref_image_0": chain_frame, **ref_images}
+                    log.info(
+                        "%s seg#%d: injected prev last-frame as <Picture 1> / ref_image_0",
+                        task_key,
+                        int(getattr(seg, "index", 0)) + 1,
+                    )
             except Exception as exc:
-                log.warning("%s prev_tail→Picture1 inject failed: %s", task_key, exc)
+                log.warning("%s prev_tail inject failed: %s", task_key, exc)
         if not ref_images:
             ref_images = None
         if task_key == "r2v":
@@ -267,7 +316,8 @@ def execute_director_plan_core(
 
     if plan.continuity_enabled:
         reports.append(
-            "Segment continuity: ON — last-frame → next first_frame handoff (no SCAIL / Wan latent lock)."
+            "Segment continuity: ON — prev last-frame → next first_frame "
+            "(ImageToVideo keyframe + post-decode pixel lock)."
         )
     else:
         reports.append("Segment continuity: OFF — per-segment generation only.")
@@ -359,26 +409,34 @@ def execute_director_plan_core(
                     chained=True,
                 )
         elif seg.task_key in {"r2v", "i2v"}:
-            from .fl2v_timeline import reinforce_ref_chain_prompt
+            from .fl2v_timeline import reinforce_fl_chain_prompt, reinforce_ref_chain_prompt
 
-            ref_idxs = [int(getattr(r, "index", 0)) for r in (seg.refs or []) if r is not None]
-            vid_idxs = (
-                [int(getattr(v, "index", 0)) for v in (getattr(seg, "ref_videos", None) or []) if v is not None]
-                if seg.task_key == "r2v"
-                else []
-            )
-            audio_idxs = (
-                [int(getattr(a, "index", 0)) for a in (seg.ref_audios or []) if a is not None]
-                if seg.task_key == "r2v"
-                else []
-            )
-            positive_prompt = reinforce_ref_chain_prompt(
-                positive_prompt,
-                chained=is_continuity_active(plan, seg),
-                ref_indices=ref_idxs,
-                video_indices=vid_idxs,
-                audio_indices=audio_idxs,
-            )
+            # i2v + chain uses ImageToVideo first_frame hard lock → fl_chain prompt language.
+            if seg.task_key == "i2v" and is_continuity_active(plan, seg):
+                positive_prompt = reinforce_fl_chain_prompt(
+                    positive_prompt,
+                    has_end_frame=False,
+                    chained=True,
+                )
+            else:
+                ref_idxs = [int(getattr(r, "index", 0)) for r in (seg.refs or []) if r is not None]
+                vid_idxs = (
+                    [int(getattr(v, "index", 0)) for v in (getattr(seg, "ref_videos", None) or []) if v is not None]
+                    if seg.task_key == "r2v"
+                    else []
+                )
+                audio_idxs = (
+                    [int(getattr(a, "index", 0)) for a in (seg.ref_audios or []) if a is not None]
+                    if seg.task_key == "r2v"
+                    else []
+                )
+                positive_prompt = reinforce_ref_chain_prompt(
+                    positive_prompt,
+                    chained=is_continuity_active(plan, seg),
+                    ref_indices=ref_idxs,
+                    video_indices=vid_idxs,
+                    audio_indices=audio_idxs,
+                )
         elif seg.task_key == "v2v":
             positive_prompt = reinforce_v2v_prompt(positive_prompt)
         elif seg.task_key == "rv2v":
@@ -449,9 +507,21 @@ def execute_director_plan_core(
             node_id, segment_index=progress_index, segment_total=seg_total,
             phase="decode", phase_value=0, phase_max=1, **meta,
         )
-        decoded, audio_dict = _decode_av_latent(
-            samples, vae, audio_vae, decode_audio=decode_audio,
-        )
+        # Always free UNET before VAE decode (low-VRAM freeze fix); segment flag only
+        # controls aggressive mid-run unload elsewhere.
+        use_tiled = prepare_vram_for_decode(enabled=True)
+        try:
+            decoded, audio_dict = _decode_av_latent(
+                samples,
+                vae,
+                audio_vae,
+                decode_audio=decode_audio,
+                use_tiled=use_tiled,
+            )
+        finally:
+            # Release sample latents ASAP so decode pixels + preview fit in RAM/VRAM.
+            del samples
+
         report_director_progress(
             node_id, segment_index=progress_index, segment_total=seg_total,
             phase="decode", phase_value=1, phase_max=1, **meta,
@@ -460,17 +530,34 @@ def execute_director_plan_core(
         if decoded.shape[0] > target_len:
             decoded = decoded[:target_len]
 
-        chunk = decoded.cpu().float()
+        # MiniMax keyframes only condition — pin opening pixels to prev last frame.
+        if prev_tail is not None and is_continuity_active(plan, seg):
+            decoded = lock_chain_opening_frame(
+                decoded,
+                prev_tail,
+                width=ctx_w,
+                height=ctx_h,
+            )
+
+        chunk = decoded.cpu().float().contiguous()
+        try:
+            del decoded
+        except Exception:
+            pass
+        cleanup_after_decode(enabled=True)
+
         save_segment_cache(node_id, seg, plan, chunk)
         completed_outputs[seg.index] = chunk
 
-        if seg.task_key in {"t2v", "i2v", "r2v", "fl2v", "v2v", "rv2v"} and decoded.shape[0] >= 1:
+        if seg.task_key in {"t2v", "i2v", "r2v", "fl2v", "v2v", "rv2v"} and chunk.shape[0] >= 1:
             try:
-                frames_b64 = [
-                    tensor_frame_to_jpeg_b64(decoded[i])
-                    for i in range(int(decoded.shape[0]))
-                ]
-                h, w = int(decoded.shape[1]), int(decoded.shape[2])
+                # Cap JPEG preview count — encoding every frame stalls after decode on weak CPUs.
+                idxs = _preview_frame_indices(int(chunk.shape[0]), max_frames=24)
+                frames_b64 = [tensor_frame_to_jpeg_b64(chunk[i]) for i in idxs]
+                h, w = int(chunk.shape[1]), int(chunk.shape[2])
+                src_fps = float(plan.frame_rate or 24)
+                duration_sec = max(1e-3, int(chunk.shape[0]) / max(src_fps, 1e-3))
+                preview_fps = max(1.0, len(frames_b64) / duration_sec)
                 report_director_segment_preview(
                     node_id,
                     segment_index=seg.index,
@@ -478,7 +565,7 @@ def execute_director_plan_core(
                     width=w,
                     height=h,
                     frames=frames_b64,
-                    fps=float(plan.frame_rate or 24),
+                    fps=preview_fps,
                 )
             except Exception as exc:
                 log.debug("Segment video preview skipped: %s", exc)
@@ -488,7 +575,8 @@ def execute_director_plan_core(
 
         reports.append(
             f"Segment {seg.index + 1}/{len(all_segments)}: {task_hint} "
-            f"({target_len} frames, seed={seed})"
+            f"({target_len} frames, seed={seed}"
+            f"{', tiled VAE' if use_tiled else ''})"
         )
         log.info(
             "MiniMax H3 Director segment %d/%d done (%d frames, task=%s)",

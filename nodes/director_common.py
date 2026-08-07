@@ -84,7 +84,10 @@ def director_perf_inputs() -> dict:
             "BOOLEAN",
             {
                 "default": True,
-                "tooltip": "段间清理显存：每段结束后卸载模型并清空 CUDA 缓存。",
+                "tooltip": (
+                    "段间清理显存：每段结束后卸载模型并清空 CUDA 缓存。"
+                    "解码前会始终先卸 UNet 给 VAE 腾显存（小显存防卡死）。"
+                ),
             },
         ),
         "export_source_images": (
@@ -379,7 +382,7 @@ def finalize_director_outputs(
     images_out = _ensure_nonempty_image_batches(images_out, label="images")
     source_images_out = _ensure_nonempty_image_batches(source_images_out, label="source_images")
 
-    report = report + "\n\n有问题联系作者：AI搅拌手  QQ交流群：551482703"
+    report = report + "\n\n有问题联系作者：若扶清  QQ：3193470083（本插件参考 AI搅拌手 / AIMixer 原作继续完善）"
 
     fps_out = float(plan.frame_rate or 24.0)
     return images_out, audio_out, fps_out, frame_count, source_images_out, report

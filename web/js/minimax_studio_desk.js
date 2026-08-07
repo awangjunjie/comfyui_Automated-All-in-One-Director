@@ -162,13 +162,39 @@ export const TRANSITIONS = ["cut", "dissolve", "flash", "whip", "none"];
 
 const REF_SAMPLERS = [
     "euler", "euler_ancestral", "heun", "dpm_2", "dpm_2_ancestral",
-    "dpmpp_2m", "dpmpp_2m_sde", "dpmpp_3m_sde", "ddim", "uni_pc",
+    "dpmpp_2m", "dpmpp_2m_sde", "dpmpp_3m_sde", "res_multistep", "ddim", "uni_pc",
 ];
 const REF_SCHEDULERS = [
     "normal", "karras", "exponential", "sgm_uniform", "simple", "ddim_uniform", "beta",
 ];
 const REF_NEG_DEFAULT =
     "blurry, lowres, low quality, worst quality, jpeg artifacts, watermark, text, logo, deformed, bad anatomy, extra limbs, mutated hands, poorly drawn face, duplicate";
+
+/** Local still-model profiles — swap wiring + sampling together. */
+const LOCAL_MODEL_PROFILES = {
+    auto: {
+        label: "自动检测",
+        wire: "按已连接 MODEL 自动匹配；SDXL / FLUX / Z-Image-Turbo 均可切换。",
+    },
+    sdxl: {
+        label: "SDXL / SD1.5",
+        use_video_size: false, width: 1024, height: 576,
+        steps: 8, cfg: 2.0, sampler: "euler_ancestral", scheduler: "normal", denoise: 1.0,
+        wire: "CheckpointLoaderSimple（完整包）→ MODEL+CLIP+VAE，换文件名即可换模型。",
+    },
+    flux: {
+        label: "FLUX",
+        use_video_size: false, width: 1024, height: 1024,
+        steps: 20, cfg: 1.0, sampler: "euler", scheduler: "simple", denoise: 1.0,
+        wire: "UNETLoader + DualCLIPLoader + VAELoader → ref_gen_*（勿用仅 UNET 的 Checkpoint）。",
+    },
+    z_image_turbo: {
+        label: "Z-Image-Turbo BF16",
+        use_video_size: false, width: 1024, height: 1024,
+        steps: 8, cfg: 1.0, sampler: "res_multistep", scheduler: "simple", denoise: 1.0,
+        wire: "UNETLoader: z_image_turbo_bf16；CLIPLoader: qwen_3_4b（type=lumina2）；VAELoader: ae.safetensors。",
+    },
+};
 
 function defaultRoleGen() {
     return { character: false, scene: false, prop: false, still: true, refs: [] };
@@ -212,6 +238,7 @@ function defaultImageDirector() {
         gen_scope: "all",
         gen_group_indices: [],
         gen_backend: "local",
+        local_model_profile: "auto",
         gen_api_format: "智谱 GLM",
         gen_api_url: "https://open.bigmodel.cn/api/paas/v4",
         gen_api_key: "",
@@ -913,19 +940,23 @@ const DESK_STYLES = `
   flex-direction:column;
   gap:6px;
 }
-.bd-workbench.is-side > .bd-main > .bd-batch{
+.bd-workbench.is-side > .bd-main > .bd-batch,
+.bd-workbench.is-side > .bd-main > .bd-fl2v-detail-wrap{
   flex:1 1 auto;
   min-height:0;
   overflow:hidden;
   display:flex;
   flex-direction:column;
 }
-.bd-workbench.is-side > .bd-main .bd-batch-list{
+.bd-workbench.is-side > .bd-main > .bd-fl2v-detail-wrap.hidden{display:none!important}
+.bd-workbench.is-side > .bd-main .bd-batch-list,
+.bd-workbench.is-side > .bd-main .bd-fl2v-shots{
   flex:1 1 auto;
   min-height:0;
   max-height:none!important;
   overflow-x:hidden;
   overflow-y:auto;
+  overscroll-behavior:contain;
 }
 .bd-workbench.is-side > .bd-studio-desk.open{
   display:flex;
@@ -954,11 +985,14 @@ const DESK_STYLES = `
   scrollbar-gutter:stable;
 }
 .bd-studio-desk.open .bd-studio-desk-body::-webkit-scrollbar,
-.bd-workbench.is-side .bd-batch-list::-webkit-scrollbar{width:8px}
+.bd-workbench.is-side .bd-batch-list::-webkit-scrollbar,
+.bd-workbench.is-side .bd-fl2v-shots::-webkit-scrollbar{width:8px}
 .bd-studio-desk.open .bd-studio-desk-body::-webkit-scrollbar-thumb,
-.bd-workbench.is-side .bd-batch-list::-webkit-scrollbar-thumb{background:#3a4458;border-radius:4px}
+.bd-workbench.is-side .bd-batch-list::-webkit-scrollbar-thumb,
+.bd-workbench.is-side .bd-fl2v-shots::-webkit-scrollbar-thumb{background:#3a4458;border-radius:4px}
 .bd-studio-desk.open .bd-studio-desk-body::-webkit-scrollbar-track,
-.bd-workbench.is-side .bd-batch-list::-webkit-scrollbar-track{background:#161a22}
+.bd-workbench.is-side .bd-batch-list::-webkit-scrollbar-track,
+.bd-workbench.is-side .bd-fl2v-shots::-webkit-scrollbar-track{background:#161a22}
 .bd-studio-tabs{display:flex;gap:4px;flex-wrap:wrap;position:sticky;top:0;z-index:3;background:#12151b;padding:0 0 8px;margin:0 0 2px;border-bottom:1px solid #1e2430}
 .bd-studio-tabs button{font-size:11px;padding:4px 10px;border-radius:4px;border:1px solid #2a3140;background:#1c2230;color:#c5cce0;cursor:pointer}
 .bd-studio-tabs button.active{background:#2b6cb0;border-color:#3b82f6;color:#fff}
@@ -1005,7 +1039,10 @@ const DESK_STYLES = `
 .bd-fl-mini-ref img{width:100%;height:100%;object-fit:cover}
 .bd-fl-mini-ref .x{position:absolute;top:0;right:2px;color:#f88;font-size:11px;z-index:2}
 .bd-fl-block.hidden,.bd-i2v-block.hidden,[data-r="ld-local-panel"].hidden,[data-r="ld-cloud-panel"].hidden,[data-r="idir-cloud-gen-panel"].hidden,[data-r="idir-local-gen-only"].hidden{display:none!important}
-[data-r="fl-shots-plan"]{max-height:280px;overflow-y:auto;overscroll-behavior:contain}
+[data-r="fl-shots-plan"]{max-height:min(42vh,420px);overflow-y:auto;overscroll-behavior:contain;scrollbar-gutter:stable;padding-right:2px}
+[data-r="fl-shots-plan"]::-webkit-scrollbar{width:8px}
+[data-r="fl-shots-plan"]::-webkit-scrollbar-thumb{background:#3a4458;border-radius:4px}
+[data-r="fl-shots-plan"]::-webkit-scrollbar-track{background:#161a22}
 `;
 
 function ensureDeskStyles() {
@@ -1214,13 +1251,26 @@ export function mountStudioDesk(editor) {
           <div style="border-top:1px solid #2a3140;padding-top:8px;margin-top:4px">
             <div class="bd-studio-row">
               <div class="bd-studio-field" style="width:160px"><label>生图后端</label>
-                <select data-r="idir-gen-backend">
-                  <option value="local">本地 Checkpoint</option>
-                  <option value="cloud">云端 API</option>
+                <select data-r="idir-gen-backend" title="本地：可切换 SDXL / FLUX / Z-Image-Turbo（接线方式不同）。云端：智谱等 API。">
+                  <option value="local">本地模型（可切换）</option>
+                  <option value="cloud">云端 API（更强/推荐）</option>
                 </select>
               </div>
               <div class="bd-meta" data-r="idir-gen-backend-hint" style="flex:1;font-size:11px;color:#8b93a7;align-self:center">
-                本地：连接节点上的 SD/SDXL Checkpoint；云端：智谱 CogView / OpenAI Compatible
+                换模型：选下方「本地模型族」并按接线说明接 ref_gen_*。
+              </div>
+            </div>
+            <div class="bd-studio-row" data-r="idir-local-gen-only">
+              <div class="bd-studio-field" style="width:200px"><label>本地模型族</label>
+                <select data-r="idir-local-profile" title="切换文生图模型族：自动套用推荐采样，并显示接线说明">
+                  <option value="auto">自动检测</option>
+                  <option value="sdxl">SDXL / SD1.5</option>
+                  <option value="flux">FLUX</option>
+                  <option value="z_image_turbo">Z-Image-Turbo BF16</option>
+                </select>
+              </div>
+              <div class="bd-meta" data-r="idir-local-profile-hint" style="flex:1;font-size:11px;color:#8b93a7;align-self:center;line-height:1.35">
+                按已连接 MODEL 自动匹配采样。
               </div>
             </div>
             <div data-r="idir-cloud-gen-panel" class="hidden">
@@ -1302,7 +1352,9 @@ export function mountStudioDesk(editor) {
             <div class="bd-studio-row" style="justify-content:space-between">
               <b style="font-size:12px;color:#e8ecf4" data-r="idir-gen-params-title">文生图参数</b>
               <span class="bd-studio-row" style="gap:4px" data-r="idir-local-gen-only">
-                <button type="button" class="bd-btn" data-a="idir-preset-turbo" title="DreamShaperXL Turbo 等">Turbo 推荐</button>
+                <button type="button" class="bd-btn" data-a="idir-preset-zimage" title="Z-Image-Turbo BF16 推荐">Z-Image</button>
+                <button type="button" class="bd-btn" data-a="idir-preset-flux" title="FLUX 推荐">FLUX</button>
+                <button type="button" class="bd-btn" data-a="idir-preset-turbo" title="DreamShaperXL Turbo 等">SDXL Turbo</button>
                 <button type="button" class="bd-btn" data-a="idir-preset-quality" title="常规 SDXL 质量档">SDXL 质量</button>
               </span>
             </div>
@@ -1363,7 +1415,7 @@ export function mountStudioDesk(editor) {
           <div class="bd-idir-preview" data-r="idir-preview" style="display:flex;flex-wrap:wrap;gap:6px;margin:8px 0;min-height:0"></div>
           <div class="bd-studio-status" data-r="idir-status"></div>
           <div class="bd-meta" style="font-size:11px;color:#8b93a7;line-height:1.4" data-r="idir-hint">
-            生图后端可选本地 Checkpoint 或云端 API。点②预览；确认后③再 Queue 完整出片。
+            本地可切换多种文生图：SDXL（Checkpoint）、Z-Image-Turbo BF16、FLUX（均接 ref_gen_*）。选「本地模型族」会套用推荐采样并显示接线。云端可用更强 API。点②预览；确认后③再 Queue 出片。
           </div>
         </div>
         <div class="bd-studio-page" data-page="director">
@@ -1618,21 +1670,34 @@ export function mountStudioDesk(editor) {
             el.classList.toggle("hidden", backend === "cloud");
         });
         const title = q('[data-r="idir-gen-params-title"]');
-        if (title) title.textContent = backend === "cloud" ? "云端生图尺寸" : "文生图参数（本地 Checkpoint）";
+        if (title) title.textContent = backend === "cloud" ? "云端生图尺寸" : "文生图参数（本地可切换模型）";
         const hint = q('[data-r="idir-gen-backend-hint"]');
         if (hint) {
             hint.textContent = backend === "cloud"
                 ? "云端：调用 images/generations（智谱 CogView / OpenAI Compatible），无需连接 Checkpoint"
-                : "本地：需连接节点上的 ref_gen_model / clip / vae（SD/SDXL Checkpoint）";
+                : "本地：选模型族并接好 ref_gen_model / clip / vae（SDXL / Z-Image / FLUX）";
         }
+        updateIdirLocalProfileUI();
         const fmt = q('[data-r="idir-gen-api-format"]')?.value || "智谱 GLM";
         const keyEl = q('[data-r="idir-gen-api-key"]');
         if (keyEl) keyEl.placeholder = fmt === "智谱 GLM" ? "智谱 API Key" : "OpenAI / 兼容服务 API Key";
+    };
+    const updateIdirLocalProfileUI = () => {
+        ensureTimelineStudio(editor.timeline);
+        const idir = editor.timeline.image_director;
+        let key = String(idir.local_model_profile || "auto").trim().toLowerCase();
+        if (!LOCAL_MODEL_PROFILES[key]) key = "auto";
+        idir.local_model_profile = key;
+        const sel = q('[data-r="idir-local-profile"]');
+        if (sel) sel.value = key;
+        const ph = q('[data-r="idir-local-profile-hint"]');
+        if (ph) ph.textContent = (LOCAL_MODEL_PROFILES[key] || LOCAL_MODEL_PROFILES.auto).wire;
     };
     const persistIdirGenApi = () => {
         ensureTimelineStudio(editor.timeline);
         const idir = editor.timeline.image_director;
         idir.gen_backend = normalizeGenBackend(q('[data-r="idir-gen-backend"]')?.value);
+        idir.local_model_profile = q('[data-r="idir-local-profile"]')?.value || "auto";
         idir.gen_api_format = q('[data-r="idir-gen-api-format"]')?.value || "智谱 GLM";
         idir.gen_api_url = q('[data-r="idir-gen-api-url"]')?.value?.trim() || "";
         idir.gen_api_model = q('[data-r="idir-gen-api-model"]')?.value?.trim() || "";
@@ -1643,8 +1708,11 @@ export function mountStudioDesk(editor) {
     {
         const idir = editor.timeline.image_director;
         idir.gen_backend = normalizeGenBackend(idir.gen_backend);
+        if (!LOCAL_MODEL_PROFILES[idir.local_model_profile]) idir.local_model_profile = "auto";
         const be = q('[data-r="idir-gen-backend"]');
         if (be) be.value = idir.gen_backend;
+        const lp = q('[data-r="idir-local-profile"]');
+        if (lp) lp.value = idir.local_model_profile || "auto";
         const fmt = q('[data-r="idir-gen-api-format"]');
         if (fmt) fmt.value = idir.gen_api_format || "智谱 GLM";
         const url = q('[data-r="idir-gen-api-url"]');
@@ -1660,6 +1728,20 @@ export function mountStudioDesk(editor) {
         beEl.onchange = () => {
             persistIdirGenApi();
             updateIdirGenBackendUI();
+        };
+    }
+    const lpEl = q('[data-r="idir-local-profile"]');
+    if (lpEl) {
+        lpEl.onchange = () => {
+            const key = q('[data-r="idir-local-profile"]')?.value || "auto";
+            ensureTimelineStudio(editor.timeline);
+            editor.timeline.image_director.local_model_profile = key;
+            if (key !== "auto" && LOCAL_MODEL_PROFILES[key]?.steps != null) {
+                applyIdirPreset(key);
+            } else {
+                persistIdirGenApi();
+                updateIdirLocalProfileUI();
+            }
         };
     }
     const fmtEl = q('[data-r="idir-gen-api-format"]');
@@ -1763,20 +1845,38 @@ export function mountStudioDesk(editor) {
     const applyIdirPreset = (preset) => {
         ensureTimelineStudio(editor.timeline);
         const id = editor.timeline.image_director;
-        if (preset === "turbo") {
+        const profileKey = {
+            turbo: "sdxl",
+            quality: "sdxl",
+            zimage: "z_image_turbo",
+            z_image_turbo: "z_image_turbo",
+            flux: "flux",
+            sdxl: "sdxl",
+        }[preset] || (LOCAL_MODEL_PROFILES[preset] ? preset : null);
+
+        if (preset === "quality") {
             Object.assign(id, {
+                local_model_profile: "sdxl",
+                use_video_size: false, width: 1024, height: 576,
+                steps: 28, cfg: 6.5, sampler: "dpmpp_2m", scheduler: "karras", denoise: 1.0,
+            });
+        } else if (preset === "turbo") {
+            Object.assign(id, {
+                local_model_profile: "sdxl",
                 use_video_size: false, width: 1024, height: 576,
                 steps: 8, cfg: 2.0, sampler: "euler_ancestral", scheduler: "normal", denoise: 1.0,
             });
-        } else if (preset === "quality") {
+        } else if (profileKey && LOCAL_MODEL_PROFILES[profileKey]?.steps != null) {
+            const p = LOCAL_MODEL_PROFILES[profileKey];
             Object.assign(id, {
-                use_video_size: false, width: 1024, height: 576,
-                steps: 28, cfg: 6.5, sampler: "dpmpp_2m", scheduler: "karras", denoise: 1.0,
+                local_model_profile: profileKey,
+                use_video_size: !!p.use_video_size,
+                width: p.width, height: p.height,
+                steps: p.steps, cfg: p.cfg, sampler: p.sampler, scheduler: p.scheduler, denoise: p.denoise,
             });
         }
         setNodeWidget(editor.node, "ref_gen_steps", id.steps);
         setNodeWidget(editor.node, "ref_gen_cfg", id.cfg);
-        // refresh inputs
         const map = {
             "idir-use-video-size": id.use_video_size,
             "idir-width": id.width,
@@ -1786,6 +1886,7 @@ export function mountStudioDesk(editor) {
             "idir-denoise": id.denoise,
             "idir-sampler": id.sampler,
             "idir-scheduler": id.scheduler,
+            "idir-local-profile": id.local_model_profile,
         };
         for (const [k, v] of Object.entries(map)) {
             const el = q(`[data-r="${k}"]`);
@@ -1793,13 +1894,24 @@ export function mountStudioDesk(editor) {
             if (el.type === "checkbox") el.checked = !!v;
             else el.value = v;
         }
+        updateIdirLocalProfileUI();
         editor.commit?.(false, { syncTimeline: true });
-        setStatus(idirStatus, preset === "turbo" ? "已应用 Turbo 推荐参数" : "已应用 SDXL 质量参数", "ok");
+        const labels = {
+            turbo: "已应用 SDXL Turbo 推荐参数",
+            quality: "已应用 SDXL 质量参数",
+            zimage: "已应用 Z-Image-Turbo 推荐参数",
+            z_image_turbo: "已应用 Z-Image-Turbo 推荐参数",
+            flux: "已应用 FLUX 推荐参数",
+            sdxl: "已应用 SDXL 推荐参数",
+        };
+        setStatus(idirStatus, labels[preset] || `已应用 ${LOCAL_MODEL_PROFILES[profileKey]?.label || preset} 参数`, "ok");
     };
 
     const idirStatus = q('[data-r="idir-status"]');
     q('[data-a="idir-preset-turbo"]').onclick = () => applyIdirPreset("turbo");
     q('[data-a="idir-preset-quality"]').onclick = () => applyIdirPreset("quality");
+    q('[data-a="idir-preset-zimage"]').onclick = () => applyIdirPreset("z_image_turbo");
+    q('[data-a="idir-preset-flux"]').onclick = () => applyIdirPreset("flux");
     q('[data-a="idir-add-guide"]').onclick = () => addGuideRef(editor, "other");
     q('[data-a="idir-add-char"]').onclick = () => addGuideRef(editor, "character");
     q('[data-a="idir-add-scene"]').onclick = () => addGuideRef(editor, "scene");
@@ -3421,6 +3533,7 @@ function syncDeskFields(editor) {
     set('[data-r="idir-enable"]', idir.enabled, true);
     set('[data-r="idir-auto-inject"]', idir.auto_inject !== false, true);
     set('[data-r="idir-gen-backend"]', (idir.gen_backend === "cloud" || String(idir.gen_backend || "").includes("云端") || String(idir.gen_backend || "").toLowerCase() === "api") ? "cloud" : "local");
+    set('[data-r="idir-local-profile"]', LOCAL_MODEL_PROFILES[idir.local_model_profile] ? idir.local_model_profile : "auto");
     set('[data-r="idir-gen-api-format"]', idir.gen_api_format || "智谱 GLM");
     set('[data-r="idir-gen-api-url"]', idir.gen_api_url || "https://open.bigmodel.cn/api/paas/v4");
     set('[data-r="idir-gen-api-model"]', idir.gen_api_model || "cogview-3-flash");
@@ -3429,12 +3542,15 @@ function syncDeskFields(editor) {
         const raw = String(idir.gen_backend || "local").toLowerCase();
         const backend = (raw === "cloud" || raw === "api" || raw.includes("云端")) ? "cloud" : "local";
         idir.gen_backend = backend;
+        if (!LOCAL_MODEL_PROFILES[idir.local_model_profile]) idir.local_model_profile = "auto";
         desk.querySelector('[data-r="idir-cloud-gen-panel"]')?.classList.toggle("hidden", backend !== "cloud");
         desk.querySelectorAll('[data-r="idir-local-gen-only"]').forEach((el) => {
             el.classList.toggle("hidden", backend === "cloud");
         });
         const title = desk.querySelector('[data-r="idir-gen-params-title"]');
-        if (title) title.textContent = backend === "cloud" ? "云端生图尺寸" : "文生图参数（本地 Checkpoint）";
+        if (title) title.textContent = backend === "cloud" ? "云端生图尺寸" : "文生图参数（本地可切换模型）";
+        const ph = desk.querySelector('[data-r="idir-local-profile-hint"]');
+        if (ph) ph.textContent = (LOCAL_MODEL_PROFILES[idir.local_model_profile] || LOCAL_MODEL_PROFILES.auto).wire;
     }
     set('[data-r="idir-unified"]', idir.unified_ref_note);
     set('[data-r="idir-suffix"]', idir.style_suffix);
