@@ -9,7 +9,8 @@
 
 **English** → [README_EN.md](README_EN.md)
 
-![MiniMaxH3Director 工作流截图](docs/screenshot.png)
+<img width="1018" height="813" alt="屏幕截图 2026-08-07 124125" src="https://github.com/user-attachments/assets/ca9d8190-0b81-40a8-91f9-6ec2280a2174" />
+
 
 ---
 
