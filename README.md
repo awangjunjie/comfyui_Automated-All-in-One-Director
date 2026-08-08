@@ -4,9 +4,7 @@
 在一个节点里完成：分镜计划 → 提示词扩写 → 参考图/首尾帧 → 链式连贯 → 采样出片 → 分段/合并导出。
 
 **当前作者：若扶清**（QQ：3193470083）——在 [AI搅拌手 / AIMixer](https://github.com/AIMixer) 原作基础上参考并继续完善。
-
-仓库：[AIMixer/ComfyUI_MiniMaxH3_Director](https://github.com/AIMixer/ComfyUI_MiniMaxH3_Director)  
-
+**教学视频**【8月8日】 https://www.bilibili.com/video/BV1jquV6ZECw/?share_source=copy_web&vd_source=e1f6b23b2ae0b6629d86664b684e861b
 **English** → [README_EN.md](README_EN.md)
 
 <img width="1018" height="813" alt="屏幕截图 2026-08-07 124125" src="https://github.com/user-attachments/assets/ca9d8190-0b81-40a8-91f9-6ec2280a2174" />
@@ -123,7 +121,7 @@
 
 ## 环境要求
 
-- **ComfyUI ≥ v0.30.0**（含官方 MiniMax H3 节点：[PR #15224](https://github.com/comfyanonymous/ComfyUI/pull/15224)、[PR #15228](https://github.com/comfyanonymous/ComfyUI/pull/15228)）
+- **ComfyUI ≥ v0.31.0**（含官方 MiniMax H3 节点：[PR #15224](https://github.com/comfyanonymous/ComfyUI/pull/15224)、[PR #15228](https://github.com/comfyanonymous/ComfyUI/pull/15228)）
 - 可选依赖见 `requirements.txt`（如 `scenedetect`、`opencv-python-headless`、`imageio-ffmpeg`）
 
 ---
@@ -177,7 +175,7 @@ pip install -r comfyui_Automated-All-in-One-Director/requirements.txt
 
 **默认采样：** 画布约 **864×480**，**124 帧 / 5s @ 24fps**，25 steps，`res_multistep` + `simple`，CFG 1.0；Sigma shift video **12** / audio **3**。
 
-**视频教程：** [B 站合集 · 插件使用教程](https://space.bilibili.com/1997403556/lists/8357740)
+**视频教程：** [B 站合集 · 插件使用教程](https://www.bilibili.com/video/BV1jquV6ZECw/?share_source=copy_web&vd_source=e1f6b23b2ae0b6629d86664b684e861b)
 
 更细的面板说明见仓库内 [`完整版使用说明.txt`](完整版使用说明.txt)。
 
@@ -195,18 +193,6 @@ pip install -r comfyui_Automated-All-in-One-Director/requirements.txt
   → 选择 全部导出 / 分段导出
   → Queue
 ```
-
----
-
-## 配套生态
-
-| 栏目 | 链接 |
-|------|------|
-| 模型 / 工作流包 | [comfyit.cn/article/506](https://comfyit.cn/article/506) |
-| 官方 MiniMax H3 文档 | [docs.comfy.org](https://docs.comfy.org/zh/tutorials/video/minimax/minimax-h3) |
-| 插件视频教程 | [B 站合集](https://space.bilibili.com/1997403556/lists/8357740) |
-| Comfyit 搅拌站 | [comfyit.cn](https://comfyit.cn/) |
-
 ---
 
 ## 作者与交流
@@ -216,10 +202,7 @@ pip install -r comfyui_Automated-All-in-One-Director/requirements.txt
 | **当前作者 / 维护者** | **若扶清** |
 | **作者 QQ** | **3193470083** |
 | **本仓库** | [comfyui_Automated-All-in-One-Director](https://github.com/awangjunjie/comfyui_Automated-All-in-One-Director) |
-
-本仓库在 [AI搅拌手 / AIMixer](https://github.com/AIMixer) 原有 MiniMax H3 导演台实现与文档思路上参考、整理并继续完善；感谢原作者的开源贡献。  
-原作者相关：QQ `3697688140` · 交流群 `551482703` / `425064221` / `559826331` · [B 站](https://space.bilibili.com/1997403556) · 姊妹插件 [ComfyUI_Bernini_Director](https://github.com/AIMixer/ComfyUI_Bernini_Director)
-
+| 插件视频教程 | [B 站合集](【8月8日】 https://www.bilibili.com/video/BV1jquV6ZECw/?share_source=copy_web&vd_source=e1f6b23b2ae0b6629d86664b684e861b) |
 ---
 
 ## 致谢
