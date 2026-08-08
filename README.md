@@ -149,16 +149,6 @@ pip install -r comfyui_Automated-All-in-One-Director/requirements.txt
 
 ---
 
-## 模型与示例工作流
-
-完整资源包（**权重 + JSON 工作流**）：  
-**[Comfyit 搅拌站 · 文章 506](https://comfyit.cn/article/506)**
-
-也可：
-
-- [Hugging Face · Comfy-Org/MiniMax-H3](https://huggingface.co/Comfy-Org/MiniMax-H3)
-- [ComfyUI 文档 · MiniMax H3](https://docs.comfy.org/zh/tutorials/video/minimax/minimax-h3)
-
 ### 推荐模型文件
 
 | 用途 | 文件 | 目录 |
@@ -174,12 +164,6 @@ pip install -r comfyui_Automated-All-in-One-Director/requirements.txt
 | 工作流 | 说明 |
 |--------|------|
 | `完整版_MiniMaxH3导演台.json` | 完整版总工作流 |
-| `完整版_MiniMaxH3导演台_文生视频_t2v.json` | t2v |
-| `完整版_MiniMaxH3导演台_首尾帧_fl2v.json` | fl2v |
-| `完整版_MiniMaxH3导演台_参考主体_r2v.json` | r2v |
-| `完整版_MiniMaxH3导演台_视频改视频_v2v.json` | v2v |
-| `完整版_MiniMaxH3导演台_参考改视频_rv2v.json` | rv2v |
-| `minimax_h3_director_*.json` | 精简示例（同上各模式） |
 
 ---
 
