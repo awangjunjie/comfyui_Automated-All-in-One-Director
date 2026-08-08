@@ -16,9 +16,80 @@ BIBLE_SYSTEM_PATH = Path(__file__).resolve().parent.parent / "prompts" / "h3_stu
 
 _CONT_MARK = re.compile(r"<<<\s*CONTINUITY\s*>>>", re.IGNORECASE)
 _SOUND_MARK = re.compile(r"<<<\s*SOUNDSCAPE\s*>>>", re.IGNORECASE)
+
+# Strip common LLM decorations before key matching
+_LINE_PREFIX = re.compile(
+    r"^(?:[-*•]+\s+|\d+[\.\)、]\s*|#{1,6}\s*|\*\*|__)*",
+)
+_LINE_KEY_WRAP = re.compile(r"^[\*`【\[]*(.+?)[\*`】\]]*$")
+
+_KEY_ALIASES = {
+    # continuity
+    "characters": "characters",
+    "character": "characters",
+    "角色": "characters",
+    "角色设定": "characters",
+    "人物": "characters",
+    "人物设定": "characters",
+    "出场角色": "characters",
+    "主要角色": "characters",
+    "主体角色": "characters",
+    "locations": "locations",
+    "location": "locations",
+    "场景": "locations",
+    "场景设定": "locations",
+    "地点": "locations",
+    "地点设定": "locations",
+    "场景地点": "locations",
+    "主场景": "locations",
+    "props": "props",
+    "prop": "props",
+    "道具": "props",
+    "道具设定": "props",
+    "关键道具": "props",
+    "物件": "props",
+    "载具": "props",
+    # desk
+    "style": "style",
+    "整体风格": "style",
+    "画风": "style",
+    "视觉风格": "style",
+    "画面风格": "style",
+    "soundscape": "soundscape",
+    "整体声景": "soundscape",
+    "声景": "soundscape",
+    "环境声": "soundscape",
+    "music": "music",
+    "配乐": "music",
+    "非叙事配乐": "music",
+    "背景音乐": "music",
+    "bgm": "music",
+}
+
+_CONT_KEYS = ("characters", "locations", "props")
+_DESK_KEYS = ("style", "soundscape", "music")
+
+# key: value  — allow optional wraps / bullets already stripped
 _KV_LINE = re.compile(
-    r"^(characters|角色|角色设定|locations|场景|场景设定|props|道具|道具设定|"
-    r"style|整体风格|画风|soundscape|整体声景|声景|music|配乐|非叙事配乐)\s*[:：]\s*(.*)$",
+    r"^("
+    + "|".join(re.escape(k) for k in sorted(_KEY_ALIASES.keys(), key=len, reverse=True))
+    + r")\s*[:：]\s*(.*)$",
+    re.IGNORECASE,
+)
+
+# Bare section title line (no colon), value on following lines
+_BARE_SECTION = re.compile(
+    r"^("
+    + "|".join(re.escape(k) for k in sorted(_KEY_ALIASES.keys(), key=len, reverse=True))
+    + r")\s*$",
+    re.IGNORECASE,
+)
+
+# 【角色设定】value  or 【角色设定】\n value
+_BRACKET_KV = re.compile(
+    r"^[【\[]\s*("
+    + "|".join(re.escape(k) for k in sorted(_KEY_ALIASES.keys(), key=len, reverse=True))
+    + r")\s*[】\]]\s*[:：]?\s*(.*)$",
     re.IGNORECASE,
 )
 
@@ -32,29 +103,30 @@ def _load_bible_system_prompt() -> str:
     )
 
 
-def _normalize_key(raw: str) -> str:
-    k = (raw or "").strip().lower()
-    mapping = {
-        "characters": "characters",
-        "角色": "characters",
-        "角色设定": "characters",
-        "locations": "locations",
-        "场景": "locations",
-        "场景设定": "locations",
-        "props": "props",
-        "道具": "props",
-        "道具设定": "props",
-        "style": "style",
-        "整体风格": "style",
-        "画风": "style",
-        "soundscape": "soundscape",
-        "整体声景": "soundscape",
-        "声景": "soundscape",
-        "music": "music",
-        "配乐": "music",
-        "非叙事配乐": "music",
-    }
-    return mapping.get(k, k)
+def _normalize_key(raw: str) -> str | None:
+    k = (raw or "").strip()
+    if not k:
+        return None
+    # unwrap residual markdown / brackets
+    m = _LINE_KEY_WRAP.match(k)
+    if m:
+        k = m.group(1).strip()
+    k_lower = k.lower()
+    if k_lower in _KEY_ALIASES:
+        return _KEY_ALIASES[k_lower]
+    if k in _KEY_ALIASES:
+        return _KEY_ALIASES[k]
+    return _KEY_ALIASES.get(k_lower) or _KEY_ALIASES.get(k)
+
+
+def _prep_line(line: str) -> str:
+    s = (line or "").strip()
+    if not s:
+        return ""
+    # drop trailing markdown bold markers like **characters**:
+    s = s.replace("**", "").replace("__", "").replace("`", "")
+    s = _LINE_PREFIX.sub("", s).strip()
+    return s
 
 
 def _parse_kv_section(block: str) -> dict[str, str]:
@@ -73,17 +145,46 @@ def _parse_kv_section(block: str) -> dict[str, str]:
         current = None
         buf = []
 
-    for line in str(block or "").splitlines():
-        m = _KV_LINE.match(line.strip())
-        if m:
-            _flush()
-            current = _normalize_key(m.group(1))
-            first = (m.group(2) or "").strip()
-            buf = [first] if first else []
+    for raw_line in str(block or "").splitlines():
+        line = _prep_line(raw_line)
+        if not line:
+            if current is not None:
+                buf.append("")
             continue
+
+        m = _KV_LINE.match(line)
+        if not m:
+            m = _BRACKET_KV.match(line)
+        if m:
+            key = _normalize_key(m.group(1))
+            if key:
+                _flush()
+                current = key
+                first = (m.group(2) or "").strip()
+                buf = [first] if first else []
+                continue
+
+        bare = _BARE_SECTION.match(line)
+        if bare:
+            key = _normalize_key(bare.group(1))
+            if key:
+                _flush()
+                current = key
+                buf = []
+                continue
+
         if current is not None:
-            buf.append(line.rstrip())
+            buf.append(raw_line.rstrip())
     _flush()
+    return out
+
+
+def _pick_keys(kv: dict[str, str], keys: tuple[str, ...]) -> dict[str, str]:
+    out: dict[str, str] = {}
+    for key in keys:
+        val = str(kv.get(key) or "").strip()
+        if val:
+            out[key] = val
     return out
 
 
@@ -99,30 +200,27 @@ def parse_studio_bible_output(text: str) -> dict[str, dict[str, str]]:
     if cont_m:
         start = cont_m.end()
         end = sound_m.start() if sound_m and sound_m.start() > start else len(text)
-        kv = _parse_kv_section(text[start:end])
-        for key in ("characters", "locations", "props"):
-            if kv.get(key):
-                continuity[key] = kv[key]
+        continuity = _pick_keys(_parse_kv_section(text[start:end]), _CONT_KEYS)
 
     if sound_m:
         start = sound_m.end()
         end = len(text)
         if cont_m and cont_m.start() > sound_m.start():
             end = cont_m.start()
-        kv = _parse_kv_section(text[start:end])
-        for key in ("style", "soundscape", "music"):
-            if kv.get(key):
-                desk[key] = kv[key]
+        desk = _pick_keys(_parse_kv_section(text[start:end]), _DESK_KEYS)
 
-    # Fallback: whole text as flat kv if markers missing
-    if not continuity and not desk:
-        kv = _parse_kv_section(text)
-        for key in ("characters", "locations", "props"):
-            if kv.get(key):
-                continuity[key] = kv[key]
-        for key in ("style", "soundscape", "music"):
-            if kv.get(key):
-                desk[key] = kv[key]
+    # Always fill missing keys from the whole text (handles missing markers /
+    # numbered lists / Chinese aliases). Previously this only ran when BOTH
+    # continuity and desk were empty, so a good SOUNDSCAPE block would block
+    # recovery of CONTINUITY → "已填充连续性 0 项、全局声景 3 项".
+    if len(continuity) < len(_CONT_KEYS) or len(desk) < len(_DESK_KEYS):
+        kv_all = _parse_kv_section(text)
+        for key in _CONT_KEYS:
+            if key not in continuity and kv_all.get(key):
+                continuity[key] = kv_all[key]
+        for key in _DESK_KEYS:
+            if key not in desk and kv_all.get(key):
+                desk[key] = kv_all[key]
 
     return {"continuity": continuity, "desk": desk}
 
@@ -141,7 +239,7 @@ def apply_studio_bible_to_timeline(
     src_d = (bible.get("desk") or {}) if isinstance(bible, dict) else {}
 
     applied = {"continuity": {}, "desk": {}}
-    for key in ("characters", "locations", "props"):
+    for key in _CONT_KEYS:
         val = str(src_c.get(key) or "").strip()
         if not val:
             continue
@@ -150,7 +248,7 @@ def apply_studio_bible_to_timeline(
             applied["continuity"][key] = val
     cont.setdefault("inject", True)
 
-    for key in ("style", "soundscape", "music"):
+    for key in _DESK_KEYS:
         val = str(src_d.get(key) or "").strip()
         if not val:
             continue
@@ -178,6 +276,8 @@ def _build_bible_user_message(*, brief: str, global_prompt: str = "") -> str:
     lines = [
         "OUTPUT=STUDIO_BIBLE",
         "请根据下列故事，输出 <<<CONTINUITY>>> 与 <<<SOUNDSCAPE>>> 块。",
+        "连续性三键必须写成：characters: / locations: / props:（不要编号、不要列表符）。",
+        "声景三键必须写成：style: / soundscape: / music:。",
         "",
         "【故事 / 创意简述】",
         brief.strip(),
@@ -223,10 +323,19 @@ def extract_studio_bible(
         system_prompt_path=BIBLE_SYSTEM_PATH if BIBLE_SYSTEM_PATH.is_file() else None,
         **{k: kw[k] for k in allow if k in kw},
     )
-    bible = parse_studio_bible_output(_strip_wrappers(raw or ""))
+    stripped = _strip_wrappers(raw or "")
+    bible = parse_studio_bible_output(stripped)
     if not bible.get("continuity") and not bible.get("desk"):
+        preview = stripped[:500].replace("\n", "\\n")
         raise RuntimeError(
-            "未解析到连续性/声景字段。请确认模型输出含 <<<CONTINUITY>>> / <<<SOUNDSCAPE>>>。"
+            "未解析到连续性/声景字段。请确认模型输出含 <<<CONTINUITY>>> / <<<SOUNDSCAPE>>> "
+            f"与 characters/locations/props、style/soundscape/music。"
+            f" 输出预览: {preview}"
+        )
+    if not bible.get("continuity"):
+        log.warning(
+            "extract_studio_bible: continuity empty after parse; raw preview=%s",
+            stripped[:400].replace("\n", "\\n"),
         )
     applied = apply_studio_bible_to_timeline(timeline, bible, overwrite=overwrite)
     log.info(
