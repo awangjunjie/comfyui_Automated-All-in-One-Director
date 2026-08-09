@@ -28,7 +28,7 @@ VIDEO_EDIT_AUDIO_TASKS = frozenset({"v2v", "rv2v"})
 
 def task_passes_source_audio(task_key: str) -> bool:
     # v2v/rv2v: source-timeline extract; others may fall back after empty model audio.
-    return task_key in {"i2v", "fl2v", "r2v", "v2v", "rv2v"}
+    return task_key in {"i2v", "fl2v", "r2v", "m2v", "v2v", "rv2v"}
 
 
 def resolve_audio_mode(plan) -> str:
@@ -157,6 +157,7 @@ def _merge_generated_segment_audios(
     *,
     total_frames: int,
     fps: float,
+    segment_videos: list | None = None,
 ) -> dict[str, Any]:
     """Concatenate per-segment AV audio into one timeline for merged video export."""
     sr = SILENT_SAMPLE_RATE
@@ -164,7 +165,17 @@ def _merge_generated_segment_audios(
         if _audio_has_samples(gen):
             sr = int(gen.get("sample_rate") or sr) or SILENT_SAMPLE_RATE
             break
-    counts = _segment_frame_counts_for_audio(plan, len(segment_audios), total_frames)
+    # Prefer actual video chunk lengths (连贯去帧后可能短于 plan)
+    if (
+        isinstance(segment_videos, list)
+        and len(segment_videos) == len(segment_audios)
+        and all(hasattr(v, "shape") for v in segment_videos)
+    ):
+        counts = [max(0, int(v.shape[0])) for v in segment_videos]
+        if sum(counts) <= 0:
+            counts = _segment_frame_counts_for_audio(plan, len(segment_audios), total_frames)
+    else:
+        counts = _segment_frame_counts_for_audio(plan, len(segment_audios), total_frames)
     parts: list[torch.Tensor] = []
     max_ch = 2
     for i, gen in enumerate(segment_audios):
@@ -203,6 +214,7 @@ def build_director_audio_outputs(
     segment_audios: list | None = None,
     audio_mode: str | None = None,
     mute_audio: bool = False,
+    segment_videos: list | None = None,
 ) -> list[dict[str, Any]]:
     """Return one AUDIO dict per images_out entry (never None)."""
     fps = float(plan.frame_rate or 24.0)
@@ -221,7 +233,11 @@ def build_director_audio_outputs(
             if n_frames <= 0:
                 n_frames = int(output_frame_end or getattr(plan, "total_frames", 0) or 0)
             merged = _merge_generated_segment_audios(
-                plan, segment_audios, total_frames=n_frames, fps=fps,
+                plan,
+                segment_audios,
+                total_frames=n_frames,
+                fps=fps,
+                segment_videos=segment_videos,
             )
             if _audio_has_samples(merged):
                 log.info(

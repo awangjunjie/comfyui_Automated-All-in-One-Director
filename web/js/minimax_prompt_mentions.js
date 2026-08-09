@@ -1,6 +1,7 @@
-﻿/** @-mention picker for MiniMax H3 director refs (图片 → <Picture N>, 音频 → <Audio J>). */
+﻿/** @-mention picker for H3 desk refs (图片 → <Picture N>, 音频 → <Audio J>). */
 
 import { api } from "../../scripts/api.js";
+import { ensureH3dTheme } from "./h3d_theme.js";
 import {
     refAudioLabel,
     refAudioPromptTag,
@@ -11,14 +12,14 @@ import {
 } from "./minimax_gen_timeline.js";
 
 const MENTION_STYLES = `
-.bd-mention-menu{position:fixed;z-index:10050;min-width:210px;max-width:300px;max-height:240px;overflow:auto;background:#252525;border:1px solid #444;border-radius:8px;box-shadow:0 8px 24px rgba(0,0,0,.45);padding:4px 0}
-.bd-mention-menu.hidden{display:none!important}
-.bd-mention-title{padding:6px 10px 4px;font-size:10px;color:#888;user-select:none}
-.bd-mention-item{display:flex;align-items:center;gap:8px;padding:6px 10px;cursor:pointer;font-size:11px;color:#ddd}
-.bd-mention-item:hover,.bd-mention-item.active{background:#333;color:#fff}
-.bd-mention-item img{width:36px;height:36px;object-fit:cover;border-radius:4px;flex-shrink:0;background:#111;border:1px solid #333}
-.bd-mention-item .bd-mention-label{font-weight:600;color:#4fff8f}
-.bd-mention-empty{padding:10px 12px;font-size:11px;color:#888;text-align:center;line-height:1.4}
+.h3d-mention-menu{position:fixed;z-index:10050;min-width:210px;max-width:300px;max-height:240px;overflow:auto;background:var(--h3d-surface);border:1px solid var(--h3d-border);border-radius:var(--h3d-radius-panel);box-shadow:0 8px 24px rgba(0,0,0,.45);padding:4px 0;border-top:2px solid var(--h3d-accent)}
+.h3d-mention-menu.hidden{display:none!important}
+.h3d-mention-title{padding:6px 10px 4px;font-size:10px;color:var(--h3d-muted);user-select:none}
+.h3d-mention-item{display:flex;align-items:center;gap:8px;padding:6px 10px;cursor:pointer;font-size:11px;color:var(--h3d-text)}
+.h3d-mention-item:hover,.h3d-mention-item.active{background:var(--h3d-accent-soft);color:var(--h3d-text)}
+.h3d-mention-item img{width:36px;height:36px;object-fit:cover;border-radius:var(--h3d-radius-ctl);flex-shrink:0;background:var(--h3d-bg);border:1px solid var(--h3d-border)}
+.h3d-mention-item .h3d-mention-label{font-weight:600;color:var(--h3d-accent)}
+.h3d-mention-empty{padding:10px 12px;font-size:11px;color:var(--h3d-muted);text-align:center;line-height:1.4}
 `;
 
 let stylesInjected = false;
@@ -26,6 +27,7 @@ let stylesInjected = false;
 function injectStyles() {
     if (stylesInjected) return;
     stylesInjected = true;
+    ensureH3dTheme();
     const el = document.createElement("style");
     el.textContent = MENTION_STYLES;
     document.head.appendChild(el);
@@ -112,7 +114,7 @@ export function wirePromptImageMentions(editor, textarea, getMedia) {
     const ensureMenu = () => {
         if (menu) return menu;
         menu = document.createElement("div");
-        menu.className = "bd-mention-menu hidden";
+        menu.className = "h3d-mention-menu hidden";
         menu.setAttribute("role", "listbox");
         document.body.appendChild(menu);
         return menu;
@@ -141,19 +143,19 @@ export function wirePromptImageMentions(editor, textarea, getMedia) {
         });
         m.innerHTML = "";
         const title = document.createElement("div");
-        title.className = "bd-mention-title";
+        title.className = "h3d-mention-title";
         title.textContent = "选择参考素材";
         m.appendChild(title);
 
         if (!filtered.length) {
             const empty = document.createElement("div");
-            empty.className = "bd-mention-empty";
+            empty.className = "h3d-mention-empty";
             empty.textContent = all.length ? "无匹配素材" : "请先上传参考图或参考音频";
             m.appendChild(empty);
         } else {
             filtered.forEach((item, i) => {
                 const row = document.createElement("div");
-                row.className = `bd-mention-item${i === activeIndex ? " active" : ""}`;
+                row.className = `h3d-mention-item${i === activeIndex ? " active" : ""}`;
                 row.dataset.index = String(i);
                 if (item.thumb) {
                     const img = document.createElement("img");
@@ -162,7 +164,7 @@ export function wirePromptImageMentions(editor, textarea, getMedia) {
                     row.appendChild(img);
                 }
                 const label = document.createElement("span");
-                label.innerHTML = `<span class="bd-mention-label">${item.label}</span>`;
+                label.innerHTML = `<span class="h3d-mention-label">${item.label}</span>`;
                 row.appendChild(label);
                 row.onmousedown = (e) => {
                     e.preventDefault();

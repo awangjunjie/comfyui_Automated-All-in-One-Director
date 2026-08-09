@@ -43,7 +43,8 @@ def director_timeline_required_inputs() -> dict:
     gp_meta["default"] = _DEFAULT_GLOBAL_PROMPT
     gp_meta["tooltip"] = (
         "User prompt — sent directly to MiniMaxH3ImageToVideo / ReferenceToVideo. "
-        "r2v: <Picture 1>. v2v: source-timeline edit (<Video 1>). "
+        "r2v: <Picture 1>. m2v: motion transfer (<Video 1> motion + <Picture 1> appearance). "
+        "v2v: source-timeline edit (<Video 1>). "
         "rv2v: source timeline + reference images (<Video 1> + <Picture N>). "
         "也可由节点内「导演台」面板的本地导演扩写写入。"
     )
@@ -70,9 +71,9 @@ def director_studio_inputs() -> dict:
 
         skill_opts = skill_option_labels()
     except Exception:
-        skill_opts = ["none — 通用（官方 H3 规范）"]
+        skill_opts = ["none — 通用（H3 规范）"]
     return {
-        "bd_grp_studio": ("BDGROUP", {"default": "导演台 Studio Desk"}),
+        "bd_grp_studio": ("BDGROUP", {"default": "导演工台 Desk"}),
         "local_director_enable": (
             "BOOLEAN",
             {
@@ -100,7 +101,7 @@ def director_studio_inputs() -> dict:
             skill_opts,
             {
                 "default": skill_opts[0],
-                "tooltip": "官方 MiniMax-H3 风格 Skill 精简版；Queue 自动扩写时一并注入。",
+                "tooltip": "H3 风格 Skill 精简版；Queue 自动扩写时一并注入。",
             },
         ),
         "local_director_max_tokens": ("INT", {"default": 2048, "min": 256, "max": 8192}),
@@ -185,7 +186,7 @@ class MiniMaxH3Director:
                 ),
                 "audio_vae": (
                     "VAE",
-                    {"tooltip": "MiniMax H3 audio VAE (minimax_h3_audio_vae). Required for r2v / v2v / rv2v."},
+                    {"tooltip": "MiniMax H3 audio VAE (minimax_h3_audio_vae). Required for r2v / m2v / v2v / rv2v."},
                 ),
                 "clip": (
                     "CLIP",
@@ -263,9 +264,9 @@ class MiniMaxH3Director:
     FUNCTION = "execute"
     CATEGORY = _CATEGORY
     DESCRIPTION = (
-        "MiniMax H3 导演台（完整版）：官方时间线采样 + 连续性设定 + 运镜/Retake + 本地 GGUF 导演 "
+        "H3 导演工台（完整版）：时间线采样 + 连续性设定 + 运镜/Retake + 本地 GGUF 导演 "
         "+ 参考图导演（全局参考图提示词/生成/注入）。"
-        "支持 t2v / i2v / fl2v / r2v / v2v / rv2v。"
+        "支持 t2v / i2v / fl2v / r2v / m2v（动作迁移）/ v2v / rv2v。"
     )
 
     def execute(
@@ -296,7 +297,7 @@ class MiniMaxH3Director:
         local_director_brief="",
         local_director_model="",
         local_director_mode="T2VA",
-        local_director_skill="none — 通用（官方 H3 规范）",
+        local_director_skill="none — 通用（H3 规范）",
         local_director_max_tokens=2048,
         local_director_temperature=0.6,
         image_director_enable=True,

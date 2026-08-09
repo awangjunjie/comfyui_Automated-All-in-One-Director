@@ -43,7 +43,7 @@ from .segment_cache import load_segment_cache
 log = logging.getLogger("ComfyUI-MiniMaxH3-Director.director.continuity")
 
 # Tasks that support「链式连贯」末帧→下镜首帧 (incl. t2v text-to-video handoff).
-CONTINUITY_TASK_KEYS = frozenset({"fl2v", "fl_chain", "i2v", "r2v", "t2v"})
+CONTINUITY_TASK_KEYS = frozenset({"fl2v", "fl_chain", "i2v", "r2v", "m2v", "t2v"})
 
 DEFAULT_CONTINUITY_OVERLAP = 9
 MIN_CONTINUITY_OVERLAP = 1
@@ -143,6 +143,63 @@ def resolve_continuity_settings(timeline: dict, *, segment_count: int) -> tuple[
     )
     overlap = max(MIN_CONTINUITY_OVERLAP, min(MAX_CONTINUITY_OVERLAP, int(raw)))
     return True, overlap
+
+
+def resolve_seam_dedupe_settings(timeline: dict, *, segment_count: int) -> tuple[bool, int]:
+    """Read「连贯去帧」flags from timeline.output (opt-in; independent of chain continuity)."""
+    if segment_count < 2:
+        return False, 8
+    output = timeline.get("output") or {}
+    enabled = bool(
+        output.get("seamDedupeEnabled") is True
+        or output.get("seam_dedupe_enabled") is True
+    )
+    raw = output.get("seamJudgeFrames") or output.get("seam_judge_frames") or 8
+    try:
+        judge = int(raw)
+    except (TypeError, ValueError):
+        judge = 8
+    judge = max(2, min(32, judge))
+    return enabled, judge
+
+
+def apply_seam_dedupe_to_chunk(
+    body: torch.Tensor,
+    prev_tail: torch.Tensor | None,
+    *,
+    judge_frames: int = 8,
+    mad_threshold: float = CONTINUITY_SEAM_ECHO_MAD,
+    min_keep: int = 5,
+) -> tuple[torch.Tensor, int]:
+    """Drop leading frames of ``body`` that echo ``prev_tail`` (MAD). Returns (body, dropped)."""
+    if (
+        body is None
+        or prev_tail is None
+        or int(getattr(body, "ndim", 0)) != 4
+        or int(body.shape[0]) <= 0
+        or int(prev_tail.shape[0]) <= 0
+    ):
+        return body, 0
+    keep = max(1, int(min_keep))
+    max_skip = min(max(0, int(judge_frames)), max(0, int(body.shape[0]) - keep))
+    if max_skip < 1:
+        return body, 0
+    drop = count_leading_seam_echo_frames(
+        body,
+        prev_tail,
+        max_skip=max_skip,
+        mad_threshold=float(mad_threshold),
+    )
+    drop = min(int(drop), max_skip)
+    if drop <= 0:
+        return body, 0
+    log.info(
+        "Seam dedupe: dropped %d leading echo frame(s) (judge=%d, mad≤%.1f)",
+        drop,
+        int(judge_frames),
+        float(mad_threshold),
+    )
+    return body[drop:], drop
 
 
 def resolve_continuity_lock_pixels(overlap_frames: int) -> int:

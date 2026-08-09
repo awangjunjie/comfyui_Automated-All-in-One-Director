@@ -58,6 +58,15 @@ TASK_PROMPT_SPECS: tuple[TaskPromptSpec, ...] = (
         "提示词用 <Picture N> / <Video K> / <Audio J>。",
     ),
     TaskPromptSpec(
+        "m2v",
+        "动作迁移(Motion Transfer)",
+        "",
+        "动作迁移：媒体轨上传单路动作视频（可预览/裁切/均分），参考图锁定角色外观。"
+        "整局默认按视频时长生成，分镜按均分时长；秒数均可手调。"
+        "提示词点名「视频1 负责动作，图片1 负责人物」，少描写动作细节。"
+        "底层走 ReferenceToVideo（与 r2v 同管线）。",
+    ),
+    TaskPromptSpec(
         "v2v",
         "视频转视频(Video to Video)",
         "",
@@ -90,8 +99,9 @@ def task_type_combo_options() -> tuple[list[str], dict]:
     return options, {
         "default": task_type_option_label(default_spec),
         "tooltip": (
-            "MiniMax H3 支持 t2v / i2v / fl2v / fl_chain / r2v / v2v / rv2v。"
+            "MiniMax H3 支持 t2v / i2v / fl2v / fl_chain / r2v / m2v / v2v / rv2v。"
             "i2v/r2v：参考图纯参考（ReferenceToVideo + <Picture N>）；"
+            "m2v：动作迁移（参考视频定动作 + 参考图定角色，底层同 r2v）；"
             "fl2v：锁首尾帧（ImageToVideo）；"
             "fl_chain / 链式连贯：上镜末帧默认接力下镜首帧（t2v/i2v/r2v/fl2v 可开关）；"
             "v2v/rv2v：源视频时间轴编辑（自动绑定 <Video 1>）。"
@@ -107,6 +117,18 @@ def resolve_task_key(task_type_value: str) -> str:
         if sep in value:
             return value.split(sep, 1)[0].strip()
     return value
+
+
+R2V_LIKE_KEYS = frozenset({"r2v", "m2v"})
+
+
+def is_r2v_like(task_type_value: str) -> bool:
+    """r2v and product alias m2v (motion transfer) share the ReferenceToVideo pipeline."""
+    return resolve_task_key(task_type_value) in R2V_LIKE_KEYS
+
+
+def is_motion_transfer(task_type_value: str) -> bool:
+    return resolve_task_key(task_type_value) == "m2v"
 
 
 def get_task_prompt_spec(task_type_value: str) -> TaskPromptSpec:

@@ -117,6 +117,54 @@ async def minimax_probe_video(request):
     return web.json_response(info)
 
 
+async def minimax_seam_dedupe(request):
+    """Compare adjacent segment seams; return head-frame trims for near-duplicate junctions."""
+    try:
+        body = await request.json()
+    except Exception as exc:
+        return web.Response(status=400, text=f"Invalid JSON: {exc}")
+
+    timeline = body.get("timeline")
+    if not isinstance(timeline, dict):
+        # Allow flat payload: video/segments/frameRate at top level
+        timeline = body if isinstance(body.get("segments"), list) else None
+    if not isinstance(timeline, dict):
+        return web.Response(status=400, text="Missing timeline object.")
+
+    segs = timeline.get("segments") or []
+    if not isinstance(segs, list) or len(segs) < 2:
+        return web.json_response(
+            {"trims": [], "totalDropped": 0, "judgeFrames": 0, "madThreshold": 0, "message": "需要至少 2 个分镜"}
+        )
+
+    try:
+        judge_frames = int(body.get("judgeFrames") or body.get("judge_frames") or 8)
+    except (TypeError, ValueError):
+        judge_frames = 8
+    try:
+        mad_threshold = float(body.get("madThreshold") or body.get("mad_threshold") or 8.0)
+    except (TypeError, ValueError):
+        mad_threshold = 8.0
+    try:
+        min_segment_frames = int(body.get("minSegmentFrames") or body.get("min_segment_frames") or 5)
+    except (TypeError, ValueError):
+        min_segment_frames = 5
+
+    from ..lib.seam_dedupe import compute_seam_trims
+
+    try:
+        result = compute_seam_trims(
+            timeline,
+            judge_frames=judge_frames,
+            mad_threshold=mad_threshold,
+            min_segment_frames=min_segment_frames,
+        )
+    except Exception as exc:
+        log.warning("MiniMax H3 Director seam_dedupe failed: %s", exc)
+        return web.Response(status=400, text=str(exc))
+    return web.json_response(result)
+
+
 async def minimax_detect_shots(request):
     """Detect shot boundaries with PySceneDetect; return logical cut frames."""
     try:
@@ -242,6 +290,7 @@ def register_routes() -> bool:
     _register_route(routes, "POST", "/minimax/director/probe_video", minimax_probe_video)
     _register_route(routes, "GET", "/minimax/director/probe_video", minimax_probe_video)
     _register_route(routes, "POST", "/minimax/director/detect_shots", minimax_detect_shots)
+    _register_route(routes, "POST", "/minimax/director/seam_dedupe", minimax_seam_dedupe)
     _register_route(routes, "POST", "/minimax/director/local_expand", minimax_local_expand)
     _register_route(routes, "GET", "/minimax/director/local_models", minimax_local_models)
     _register_route(routes, "POST", "/minimax/director/shot_list", minimax_shot_list)

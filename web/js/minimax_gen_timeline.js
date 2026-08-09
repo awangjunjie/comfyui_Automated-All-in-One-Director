@@ -1,9 +1,9 @@
 /** Shared helpers for MiniMax H3 Director generation tasks. */
 
-/** MiniMax H3 canvas snap (official nodes use 32). */
+/** H3 canvas dimension snap (step 32). */
 export const MINIMAX_CANVAS_MULTIPLE = 32;
 
-/** ResolutionSelector aspect presets (UI labels in Chinese; ratios match official node). */
+/** ResolutionSelector aspect presets (UI labels in Chinese; canonical aspect ratios). */
 export const RESOLUTION_ASPECTS = [
     ["1:1 (方形)", 1, 1],
     ["2:3 (竖版照片)", 2, 3],
@@ -16,7 +16,7 @@ export const RESOLUTION_ASPECTS = [
 ];
 
 export const DEFAULT_ASPECT_RATIO = "16:9 (宽屏)";
-/** Manual width × height (not in official ResolutionSelector). */
+/** Manual width × height (custom width/height mode). */
 export const CUSTOM_ASPECT_RATIO = "自定义";
 /** Official MiniMax template default: 0.4 MP → 864×480 at 16:9 (multiple=32) */
 export const DEFAULT_MEGAPIXELS = 0.4;
@@ -153,12 +153,14 @@ export function resolutionFromSelector(aspectRatio, megapixels, multiple = MINIM
 export const IMAGE_BATCH_TASKS = new Set();
 export const FL2V_TASKS = new Set(["fl2v", "fl_chain"]);
 /** Tasks that support「链式连贯」toggle (prev last-frame → next first-frame / Picture 1). */
-export const CHAIN_CONTINUITY_TASKS = new Set(["fl2v", "fl_chain", "i2v", "r2v", "t2v"]);
+export const CHAIN_CONTINUITY_TASKS = new Set(["fl2v", "fl_chain", "i2v", "r2v", "m2v", "t2v"]);
 /** Blank-canvas / subject-ref batch generation (not source-video editing). */
-export const VIDEO_BATCH_TASKS = new Set(["t2v", "i2v", "r2v"]);
+export const VIDEO_BATCH_TASKS = new Set(["t2v", "i2v", "r2v", "m2v"]);
 export const PROMPT_BATCH_TASKS = new Set([...VIDEO_BATCH_TASKS, ...FL2V_TASKS]);
-/** Tasks that never use source-video upload toolbar. v2v/rv2v use Bernini-style video timeline. */
+/** Tasks that never use source-video upload toolbar. m2v uses media-track motion source. */
 export const NO_VIDEO_UPLOAD_TASKS = new Set(["t2v", "i2v", "r2v"]);
+/** r2v + motion-transfer (ReferenceToVideo pipeline; m2v uses media track for the motion video). */
+export const R2V_LIKE_TASKS = new Set(["r2v", "m2v"]);
 
 export function resolveTaskKey(taskTypeValue) {
     let value = String(taskTypeValue || "").split(",[object Object]", 1)[0].trim();
@@ -167,6 +169,14 @@ export function resolveTaskKey(taskTypeValue) {
         if (value.includes(sep)) return value.split(sep, 1)[0].trim();
     }
     return value || "t2v";
+}
+
+export function isR2vLikeTask(taskKey) {
+    return R2V_LIKE_TASKS.has(resolveTaskKey(taskKey));
+}
+
+export function isMotionTransferTask(taskKey) {
+    return resolveTaskKey(taskKey) === "m2v";
 }
 
 export function isGenTaskType(taskTypeValue) {
@@ -190,20 +200,21 @@ export function getDirectorMode(taskTypeValue) {
     const key = resolveTaskKey(taskTypeValue);
     if (FL2V_TASKS.has(key)) return "fl2v";
     if (PROMPT_BATCH_TASKS.has(key)) return "prompt_batch";
-    // v2v / rv2v (and any non-batch key) → source-video timeline, same as Bernini.
+    // v2v / rv2v (and any non-batch key) → source-video timeline, source-video timeline mode.
     return "video";
 }
 
-/** t2i/t2v=plain, i2i=source image, i2v/r2i/r2v=up to 9 reference images (pure ref; fl2v locks frames) */
+/** t2i/t2v=plain, i2i=source image, i2v/r2i/r2v/m2v=up to 9 reference images (pure ref; fl2v locks frames) */
 export function imageBatchVariant(taskKey) {
     if (taskKey === "i2i") return "source";
-    if (taskKey === "i2v" || taskKey === "r2i" || taskKey === "r2v") return "refs";
+    if (taskKey === "i2v" || taskKey === "r2i" || isR2vLikeTask(taskKey)) return "refs";
     return "plain";
 }
 
-/** t2i/r2i/t2v/r2v/i2v need fixed canvas; i2i may use long_edge. */
+/** t2i/r2i/t2v/r2v/m2v/i2v need fixed canvas; i2i may use long_edge. */
 export function imageBatchRequiresFixedOutput(taskKey) {
-    return taskKey === "t2i" || taskKey === "r2i" || taskKey === "t2v" || taskKey === "r2v" || taskKey === "i2v";
+    return taskKey === "t2i" || taskKey === "r2i" || taskKey === "t2v"
+        || taskKey === "i2v" || isR2vLikeTask(taskKey);
 }
 
 /** Maximum frames per diffusion segment (model / VRAM practical limit). */
@@ -266,9 +277,10 @@ export function refVideoPromptTag(index) {
 const NO_REF_IMAGE_TASKS = new Set(["v2v", "mv2v", "ads2v", "t2v", "fl2v", "fl_chain"]);
 
 export function taskUsesReferenceImages(taskKey) {
-    if (NO_REF_IMAGE_TASKS.has(taskKey)) return false;
-    // i2v/r2v batch + legacy Bernini-style ref edit keys.
-    return taskKey === "i2v" || taskKey === "r2v" || taskKey === "r2i" || taskKey === "rv2v" || taskKey === "vrc2v" || taskKey === "vi2v";
+    const key = resolveTaskKey(taskKey);
+    if (NO_REF_IMAGE_TASKS.has(key)) return false;
+    // i2v/r2v/m2v batch + legacy ref-edit keys.
+    return key === "i2v" || isR2vLikeTask(key) || key === "r2i" || key === "rv2v" || key === "vrc2v" || key === "vi2v";
 }
 
 /**
@@ -291,7 +303,7 @@ export function directorModeFromTaskKey(taskKey) {
     const key = resolveTaskKey(taskKey);
     if (key === "fl2v" || key === "fl_chain") return "FL2VA";
     if (key === "i2v" || key === "i2i") return "I2VA";
-    if (key === "r2v" || key === "r2i" || key === "rv2v" || key === "vi2v" || key === "vrc2v"
+    if (isR2vLikeTask(key) || key === "r2i" || key === "rv2v" || key === "vi2v" || key === "vrc2v"
         || key === "v2v" || key === "ads2v" || key === "mv2v") {
         return "REF2VA";
     }
@@ -303,7 +315,7 @@ export function directorModeFromTaskKey(taskKey) {
 export function taskUsesPromptGroups(taskKey) {
     const key = resolveTaskKey(taskKey);
     return (
-        key === "t2v" || key === "i2v" || key === "r2v"
+        key === "t2v" || key === "i2v" || isR2vLikeTask(key)
         || key === "t2i" || key === "i2i" || key === "r2i"
         || key === "fl2v" || key === "fl_chain"
     );
@@ -314,9 +326,10 @@ export function taskUsesReferenceVideo(taskKey) {
     return taskKey === "ads2v";
 }
 
-/** Standalone <Audio j> slots — official r2v / Director rv2v. */
+/** Standalone <Audio j> slots for r2v / m2v / rv2v. */
 export function taskUsesReferenceAudios(taskKey) {
-    return taskKey === "rv2v" || taskKey === "r2v";
+    const key = resolveTaskKey(taskKey);
+    return key === "rv2v" || isR2vLikeTask(key);
 }
 
 /** Default duration seconds for video batch / fl2v (→ 124 frames @ 24fps). */

@@ -335,7 +335,18 @@ def finalize_director_outputs(
                 + f"\n\nPartial run: output contains {len(segment_outputs)} re-generated clip(s) only."
             )
     else:
-        combined = pad_or_trim_frames(combined, plan.total_frames).cpu().float()
+        # 连贯去帧会缩短成片：勿再 pad 回 plan.total_frames，否则会把去掉的接缝帧用尾帧补回
+        actual_n = int(getattr(combined, "shape", [0])[0] or 0)
+        target_n = int(plan.total_frames or 0)
+        if getattr(plan, "seam_dedupe_enabled", False) and actual_n > 0 and actual_n < target_n:
+            combined = combined.cpu().float()
+            report = (
+                report
+                + f"\n\nSeam dedupe: export length {actual_n} (plan {target_n}, "
+                + f"dropped {target_n - actual_n} junction frame(s))."
+            )
+        else:
+            combined = pad_or_trim_frames(combined, plan.total_frames).cpu().float()
         images_out = [combined]
         frame_count = int(combined.shape[0])
         if video_batch and is_batch and len(segment_outputs) > 1:
@@ -354,6 +365,7 @@ def finalize_director_outputs(
         output_frame_end=audio_frame_end,
         segment_audios=segment_audios if use_generated else None,
         audio_mode=audio_mode,
+        segment_videos=segment_outputs if use_generated else None,
     )
     report = report + source_audio_report_note(
         plan,

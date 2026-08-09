@@ -3,6 +3,7 @@
 import { api } from "../../scripts/api.js";
 import { resolveTaskKey, taskUsesReferenceImages, taskUsesReferenceVideo } from "./minimax_gen_timeline.js";
 import { stripFl2vPromptBody } from "./minimax_fl2v.js";
+import { ensureH3dTheme } from "./h3d_theme.js";
 
 export const PE_PANEL_COLLAPSED_H = 34;
 export const PE_PANEL_EXPANDED_H = 348;
@@ -27,7 +28,7 @@ const LEGACY_OPENAI_FORMAT = "OpenAI / vLLM";
 const STATUS_COLORS = {
     info: "#9aa3b5",
     loading: "#fbbf24",
-    success: "#4ade80",
+    success: "var(--h3d-secondary)",
     error: "#f87171",
 };
 
@@ -70,30 +71,31 @@ function normalizeOpenAiCompatMode(mode) {
 }
 
 function ensurePeStyles() {
-    if (document.getElementById("minimax-pe-styles")) return;
+    ensureH3dTheme();
+    if (document.getElementById("h3d-pe-styles")) return;
     const style = document.createElement("style");
-    style.id = "minimax-pe-styles";
+    style.id = "h3d-pe-styles";
     style.textContent = `
-@keyframes minimax-pe-pulse { 0%,100%{opacity:1} 50%{opacity:.65} }
-.minimax-pe-loading { animation: minimax-pe-pulse 1.2s ease-in-out infinite !important; }
-.minimax-pe-label { font-size: 11px; color: #b8c0d0; flex-shrink: 0; white-space: nowrap; }
-.minimax-pe-input, .minimax-pe-select {
+@keyframes h3d-pe-pulse { 0%,100%{opacity:1} 50%{opacity:.65} }
+.h3d-pe-loading { animation: h3d-pe-pulse 1.2s ease-in-out infinite !important; }
+.h3d-pe-label { font-size: 11px; color: var(--h3d-muted); flex-shrink: 0; white-space: nowrap; }
+.h3d-pe-input, .h3d-pe-select {
     font-size: 11px; line-height: 1.35; min-height: 28px; box-sizing: border-box;
-    background: #12151b; color: #e8ecf4; border: 1px solid #2a3140; border-radius: 4px;
+    background: var(--h3d-bg); color: var(--h3d-text); border: 1px solid var(--h3d-border); border-radius: var(--h3d-radius-ctl);
 }
-.minimax-pe-input { padding: 5px 8px; }
-.minimax-pe-select { padding: 4px 8px; cursor: pointer; }
-.minimax-pe-btn-sm {
+.h3d-pe-input { padding: 5px 8px; }
+.h3d-pe-select { padding: 4px 8px; cursor: pointer; }
+.h3d-pe-btn-sm {
     font-size: 11px; line-height: 1.35; min-height: 28px; box-sizing: border-box;
-    background: #252a34; color: #e8ecf4; border: 1px solid #2a3140; border-radius: 4px;
+    background: var(--h3d-elevated); color: var(--h3d-text); border: 1px solid var(--h3d-border); border-radius: var(--h3d-radius-ctl);
     padding: 4px 10px; cursor: pointer; flex-shrink: 0; white-space: nowrap;
 }
-.minimax-pe-api-row { display: flex; gap: 6px; align-items: center; flex-wrap: nowrap; }
-.minimax-pe-api-row .minimax-pe-select { flex: 0 1 38%; min-width: 132px; max-width: 220px; }
-.minimax-pe-api-row .minimax-pe-input { flex: 1 1 120px; min-width: 0; }
-.minimax-pe-options-row { display: flex; gap: 14px; align-items: center; flex-wrap: wrap; }
-.minimax-pe-check-item { display: flex; gap: 4px; align-items: center; }
-.minimax-pe-check-item span { font-size: 11px; color: #b8c0d0; }
+.h3d-pe-api-row { display: flex; gap: 6px; align-items: center; flex-wrap: nowrap; }
+.h3d-pe-api-row .h3d-pe-select { flex: 0 1 38%; min-width: 132px; max-width: 220px; }
+.h3d-pe-api-row .h3d-pe-input { flex: 1 1 120px; min-width: 0; }
+.h3d-pe-options-row { display: flex; gap: 14px; align-items: center; flex-wrap: wrap; }
+.h3d-pe-check-item { display: flex; gap: 4px; align-items: center; }
+.h3d-pe-check-item span { font-size: 11px; color: var(--h3d-muted); }
 `;
     document.head.appendChild(style);
 }
@@ -191,41 +193,41 @@ export function mountPromptEnhancerPanel(editor, parentEl) {
             activeBtn.textContent = label;
             activeBtn.style.background = "#d97706";
             activeBtn.style.cursor = "wait";
-            activeBtn.classList.add("minimax-pe-loading");
+            activeBtn.classList.add("h3d-pe-loading");
         } else {
             pe.enhanceCurrentBtn.textContent = "扩写当前提示词";
             pe.enhanceAllBtn.textContent = "扩写全部提示词";
-            pe.enhanceCurrentBtn.style.background = "#3b82f6";
-            pe.enhanceAllBtn.style.background = "#6366f1";
+            pe.enhanceCurrentBtn.style.background = "#d4923a";
+            pe.enhanceAllBtn.style.background = "#5eb1a8";
             pe.enhanceCurrentBtn.style.cursor = "pointer";
             pe.enhanceAllBtn.style.cursor = "pointer";
-            pe.enhanceCurrentBtn.classList.remove("minimax-pe-loading");
-            pe.enhanceAllBtn.classList.remove("minimax-pe-loading");
+            pe.enhanceCurrentBtn.classList.remove("h3d-pe-loading");
+            pe.enhanceAllBtn.classList.remove("h3d-pe-loading");
         }
     };
 
     const header = el({
         display: "flex", justifyContent: "space-between", alignItems: "center",
-        background: "#1a1d24", border: "1px solid #2a3140", borderRadius: "4px",
+        background: "#1a222d", border: "1px solid #3d4a5c", borderRadius: "4px",
         padding: "6px 8px", cursor: "pointer", userSelect: "none", marginTop: "6px",
     });
-    header.appendChild(el({ fontWeight: "600", fontSize: "10px", color: "#9aa3b5", textTransform: "uppercase" }, "LLM 提示词增强 Prompt Enhancer"));
-    pe.arrow = el({ fontSize: "10px", color: "#9aa3b5" }, "\u25B6");
+    header.appendChild(el({ fontWeight: "600", fontSize: "10px", color: "#93a1b5", textTransform: "uppercase" }, "LLM 提示词增强 Prompt Enhancer"));
+    pe.arrow = el({ fontSize: "10px", color: "#93a1b5" }, "\u25B6");
     header.appendChild(pe.arrow);
 
     pe.body = el({
-        background: "#1a1d24", border: "1px solid #2a3140", borderTop: "none",
+        background: "#1a222d", border: "1px solid #3d4a5c", borderTop: "none",
         borderRadius: "0 0 4px 4px", padding: "8px", display: "none",
         flexDirection: "column", gap: "6px", marginTop: "-5px",
     });
-    pe.body.appendChild(el({ fontSize: "9px", color: "#7d8698", lineHeight: "1.4" },
-        "按 MiniMax H3 官方 task 模板扩写短提示词。「当前」仅扩写选中片段/全局；「全部」在分段模式下依次扩写各片段。"));
+    pe.body.appendChild(el({ fontSize: "9px", color: "#93a1b5", lineHeight: "1.4" },
+        "按 H3 task 模板扩写短提示词。「当前」仅扩写选中片段/全局；「全部」在分段模式下依次扩写各片段。"));
 
     const fmtRow = el({});
-    fmtRow.className = "minimax-pe-api-row";
-    fmtRow.appendChild(el({}, "API:", "span")).className = "minimax-pe-label";
+    fmtRow.className = "h3d-pe-api-row";
+    fmtRow.appendChild(el({}, "API:", "span")).className = "h3d-pe-label";
     pe.apiSelect = document.createElement("select");
-    pe.apiSelect.className = "minimax-pe-select";
+    pe.apiSelect.className = "h3d-pe-select";
     for (const [val, label] of [
         [API_OLLAMA, "Ollama (/api/chat)"],
         [API_ZHIPU, "智谱 GLM (/paas/v4/chat)"],
@@ -238,7 +240,7 @@ export function mountPromptEnhancerPanel(editor, parentEl) {
     pe.urlInput = document.createElement("input");
     pe.urlInput.type = "text";
     pe.urlInput.placeholder = DEFAULT_LLM_URL;
-    pe.urlInput.className = "minimax-pe-input";
+    pe.urlInput.className = "h3d-pe-input";
     pe.urlInput.oninput = () => {
         pe.apiSelect.value = inferApiFormat(pe.urlInput.value, pe.apiSelect.value);
         pe.updateApiFormatUI();
@@ -259,17 +261,17 @@ export function mountPromptEnhancerPanel(editor, parentEl) {
     fmtRow.appendChild(pe.apiSelect);
     fmtRow.appendChild(pe.urlInput);
     pe.refreshBtn = el({}, "刷新模型", "button");
-    pe.refreshBtn.className = "minimax-pe-btn-sm";
+    pe.refreshBtn.className = "h3d-pe-btn-sm";
     pe.refreshBtn.onclick = () => pe.fetchModels();
     fmtRow.appendChild(pe.refreshBtn);
-    pe.visionBadge = el({ fontSize: "9px", color: "#4ade80", flexShrink: "0", display: "none" });
+    pe.visionBadge = el({ fontSize: "9px", color: "var(--h3d-secondary)", flexShrink: "0", display: "none" });
     fmtRow.appendChild(pe.visionBadge);
     pe.body.appendChild(fmtRow);
 
     const compatRow = el({ display: "none", gap: "6px", alignItems: "center" });
-    compatRow.appendChild(el({}, "OpenAI 特性:", "span")).className = "minimax-pe-label";
+    compatRow.appendChild(el({}, "OpenAI 特性:", "span")).className = "h3d-pe-label";
     pe.compatSelect = document.createElement("select");
-    pe.compatSelect.className = "minimax-pe-select";
+    pe.compatSelect.className = "h3d-pe-select";
     Object.assign(pe.compatSelect.style, { flex: "1" });
     for (const [val, label] of [
         [OPENAI_COMPAT_STANDARD, "标准"],
@@ -290,12 +292,12 @@ export function mountPromptEnhancerPanel(editor, parentEl) {
 
     const keyRow = el({ display: "flex", gap: "6px", alignItems: "center" });
     keyRow.dataset.r = "pe-key-row";
-    keyRow.appendChild(el({}, "API Key:", "span")).className = "minimax-pe-label";
+    keyRow.appendChild(el({}, "API Key:", "span")).className = "h3d-pe-label";
     pe.apiKeyInput = document.createElement("input");
     pe.apiKeyInput.type = "password";
     pe.apiKeyInput.placeholder = "智谱 API Key";
     pe.apiKeyInput.autocomplete = "off";
-    pe.apiKeyInput.className = "minimax-pe-input";
+    pe.apiKeyInput.className = "h3d-pe-input";
     Object.assign(pe.apiKeyInput.style, { flex: "1" });
     pe.apiKeyInput.oninput = () => pe.syncToWidgets();
     swallowKeys(pe.apiKeyInput);
@@ -304,36 +306,36 @@ export function mountPromptEnhancerPanel(editor, parentEl) {
     pe.body.appendChild(keyRow);
 
     const modelRow = el({ display: "flex", gap: "6px", alignItems: "center" });
-    modelRow.appendChild(el({}, "模型:", "span")).className = "minimax-pe-label";
+    modelRow.appendChild(el({}, "模型:", "span")).className = "h3d-pe-label";
     pe.modelInput = document.createElement("input");
     pe.modelInput.type = "text";
     pe.modelInput.placeholder = DEFAULT_LLM_MODEL;
-    pe.modelInput.className = "minimax-pe-input";
+    pe.modelInput.className = "h3d-pe-input";
     Object.assign(pe.modelInput.style, { flex: "1" });
     pe.modelInput.oninput = () => pe.syncToWidgets();
     swallowKeys(pe.modelInput);
     modelRow.appendChild(pe.modelInput);
     pe.modelList = document.createElement("datalist");
-    pe.modelList.id = `minimax-pe-models-${editor.node.id}`;
+    pe.modelList.id = `h3d-pe-models-${editor.node.id}`;
     pe.modelInput.setAttribute("list", pe.modelList.id);
     modelRow.appendChild(pe.modelList);
     pe.body.appendChild(modelRow);
 
     const langRow = el({ display: "flex", gap: "6px", alignItems: "center" });
-    langRow.appendChild(el({}, "扩写语言:", "span")).className = "minimax-pe-label";
+    langRow.appendChild(el({}, "扩写语言:", "span")).className = "h3d-pe-label";
     pe.langSelect = document.createElement("select");
-    pe.langSelect.className = "minimax-pe-select";
+    pe.langSelect.className = "h3d-pe-select";
     Object.assign(pe.langSelect.style, { flex: "1" });
     for (const [val, label] of [
         [OUTPUT_LANGUAGE_ZH, "中文（简体中文）"],
-        ["English", "English（官方推荐）"],
+        ["English", "English（推荐）"],
     ]) {
         const o = document.createElement("option");
         o.value = val; o.textContent = label;
         pe.langSelect.appendChild(o);
     }
     pe.langSelect.title =
-        "LLM 扩写输出语言。MiniMax H3 官方示例与 T5 系统提示词为英文；"
+        "LLM 扩写输出语言。H3 示例与 T5 系统提示词多为英文；"
         + "选中文时扩写结果为简体中文。";
     pe.langSelect.onchange = () => {
         pe._lastOutputLanguage = pe.langSelect.value || DEFAULT_OUTPUT_LANGUAGE;
@@ -344,19 +346,19 @@ export function mountPromptEnhancerPanel(editor, parentEl) {
     pe.body.appendChild(langRow);
 
     const AUTO_ENHANCE_TIP =
-        "Queue 时在服务端自动用 LLM 扩写每段正向提示词（MiniMax H3 官方 task 模板；"
+        "Queue 时在服务端自动用 LLM 扩写每段正向提示词（H3 task 模板；"
         + "可附带源视频帧与参考图）。扩写失败则使用原文，不中断生成。"
         + "多段任务会每段各调用一次 LLM，耗时会增加。";
 
     const optionsRow = el({});
-    optionsRow.className = "minimax-pe-options-row";
+    optionsRow.className = "h3d-pe-options-row";
     const detailItem = el({});
-    detailItem.className = "minimax-pe-check-item";
+    detailItem.className = "h3d-pe-check-item";
     pe.detailCheck = document.createElement("input");
     pe.detailCheck.type = "checkbox";
     pe.detailCheck.checked = false;
     pe.detailCheck.title =
-        "rv2v/r2v/r2i 等含参考图任务：未勾选时按 MiniMax H3 官方模板扩写；"
+        "rv2v/r2v/r2i 等含参考图任务：未勾选时按 H3 模板扩写；"
         + "勾选后启用角色特征增强（≥300汉字详尽外观描述）。";
     pe.detailCheck.onchange = () => pe.syncToWidgets();
     detailItem.appendChild(pe.detailCheck);
@@ -366,7 +368,7 @@ export function mountPromptEnhancerPanel(editor, parentEl) {
     optionsRow.appendChild(detailItem);
 
     const autoItem = el({ cursor: "help" });
-    autoItem.className = "minimax-pe-check-item";
+    autoItem.className = "h3d-pe-check-item";
     autoItem.title = AUTO_ENHANCE_TIP;
     pe.autoCheck = document.createElement("input");
     pe.autoCheck.type = "checkbox";
@@ -380,7 +382,7 @@ export function mountPromptEnhancerPanel(editor, parentEl) {
     optionsRow.appendChild(autoItem);
 
     pe.unloadWrap = el({});
-    pe.unloadWrap.className = "minimax-pe-check-item";
+    pe.unloadWrap.className = "h3d-pe-check-item";
     pe.unloadCheck = document.createElement("input");
     pe.unloadCheck.type = "checkbox";
     pe.unloadCheck.onchange = () => pe.syncToWidgets();
@@ -393,13 +395,13 @@ export function mountPromptEnhancerPanel(editor, parentEl) {
     const btnRow = el({ display: "flex", gap: "6px", flexDirection: "column" });
     const enhanceRow = el({ display: "flex", gap: "6px" });
     pe.enhanceCurrentBtn = el({
-        flex: "1", background: "#3b82f6", color: "#fff", border: "none", borderRadius: "4px",
+        flex: "1", background: "#d4923a", color: "#fff", border: "none", borderRadius: "4px",
         padding: "6px", fontWeight: "600", fontSize: "10px", cursor: "pointer",
     }, "扩写当前提示词", "button");
     pe.enhanceCurrentBtn.onclick = () => pe.enhancePrompt("current");
     enhanceRow.appendChild(pe.enhanceCurrentBtn);
     pe.enhanceAllBtn = el({
-        flex: "1", background: "#6366f1", color: "#fff", border: "none", borderRadius: "4px",
+        flex: "1", background: "var(--h3d-secondary)", color: "#fff", border: "none", borderRadius: "4px",
         padding: "6px", fontWeight: "600", fontSize: "10px", cursor: "pointer",
     }, "扩写全部提示词", "button");
     pe.enhanceAllBtn.onclick = () => pe.enhancePrompt("all");

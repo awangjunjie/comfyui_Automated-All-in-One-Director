@@ -21,7 +21,7 @@ from ..lib.ref_audios import MAX_REFERENCE_AUDIOS, ref_audios_dict
 from ..lib.ref_images import MAX_REFERENCE_IMAGES, REF_IMAGE_KEY_PREFIX
 from ..lib.ref_videos import MAX_REFERENCE_VIDEOS, ref_videos_dict
 from ..lib.image_prep import resolve_output_dimensions
-from ..lib.task_prompts import get_task_prompt_spec, resolve_task_key
+from ..lib.task_prompts import get_task_prompt_spec, is_r2v_like, resolve_task_key
 from ..lib.video_io import (
     load_reference_video_clip,
     logical_frame_count,
@@ -113,6 +113,9 @@ class DirectorPlan:
     run_indices: frozenset[int] | None = None  # None = run all segments
     continuity_enabled: bool = False
     continuity_overlap_frames: int = 0
+    # 连贯去帧：导出/拼接时去掉相邻镜衔接处高度相似的连续帧（与链式连贯独立）
+    seam_dedupe_enabled: bool = False
+    seam_judge_frames: int = 8
     global_ref_audios: list[SegmentRefAudio] = field(default_factory=list)
 
     @property
@@ -245,8 +248,8 @@ def _load_ref_audios(audio_list: list[dict]) -> list[SegmentRefAudio]:
 
 
 def segment_ref_audios_for_context(task_key: str, audios: list[SegmentRefAudio]) -> list[SegmentRefAudio]:
-    """Standalone ref audios apply to r2v / rv2v (official ReferenceToVideo)."""
-    if task_key not in {"r2v", "rv2v"}:
+    """Standalone ref audios apply to r2v / m2v / rv2v (official ReferenceToVideo)."""
+    if task_key not in {"r2v", "m2v", "rv2v"}:
         return []
     return audios
 
@@ -315,7 +318,7 @@ def reinforce_r2v_prompt(
     video_indices: list[int] | None = None,
     audio_indices: list[int] | None = None,
 ) -> str:
-    """Remind <Picture N> / <Video K> / <Audio J> when tags are missing (r2v batch)."""
+    """Remind <Picture N> / <Video K> / <Audio J> when tags are missing (r2v / m2v batch)."""
     text = (prompt or "").strip() or "Generate a cinematic scene."
     pic_indices = sorted({int(i) for i in (ref_indices or []) if int(i) >= 0})
     vid_indices = sorted({int(i) for i in (video_indices or []) if int(i) >= 0})
@@ -333,6 +336,37 @@ def reinforce_r2v_prompt(
     if not prefix_parts:
         return text
     return f"{' '.join(prefix_parts)} {text}"
+
+
+def reinforce_m2v_prompt(
+    prompt: str,
+    *,
+    ref_indices: list[int] | None = None,
+    video_indices: list[int] | None = None,
+    audio_indices: list[int] | None = None,
+) -> str:
+    """Motion transfer: ensure media tags + role hint (video=motion, picture=appearance)."""
+    text = reinforce_r2v_prompt(
+        prompt,
+        ref_indices=ref_indices,
+        video_indices=video_indices,
+        audio_indices=audio_indices,
+    )
+    lower = text.lower()
+    has_role = (
+        "动作" in text
+        or "运镜" in text
+        or "motion" in lower
+        or "appearance" in lower
+        or "参考视频" in text
+        or "参考图" in text
+    )
+    if has_role:
+        return text
+    return (
+        "人物外观参考图片1，动作与运镜参考视频1。"
+        f" {text}"
+    ).strip()
 
 
 def _segment_ranges_from_timeline(timeline: dict, total: int) -> list[tuple[int, int, dict]]:
@@ -651,11 +685,21 @@ def build_director_plan(
             "Upload the content-to-insert clip for this segment in the Director node UI."
         )
 
-    from .segment_continuity import resolve_continuity_settings
+    from .segment_continuity import (
+        CONTINUITY_TASK_KEYS,
+        resolve_continuity_settings,
+        resolve_seam_dedupe_settings,
+    )
 
     continuity_enabled, continuity_overlap = resolve_continuity_settings(
         timeline, segment_count=len(segments)
     )
+    seam_dedupe_enabled, seam_judge_frames = resolve_seam_dedupe_settings(
+        timeline, segment_count=len(segments)
+    )
+    task_key = resolve_task_key(task_type)
+    if task_key not in CONTINUITY_TASK_KEYS:
+        seam_dedupe_enabled = False
 
     return DirectorPlan(
         frame_rate=float(timeline.get("frameRate") or frame_rate or 24),
@@ -667,7 +711,7 @@ def build_director_plan(
         source_width=int(meta_w or loaded_w),
         source_height=int(meta_h or loaded_h),
         global_task_type=task_type,
-        global_task_key=resolve_task_key(task_type),
+        global_task_key=task_key,
         global_prompt=prompt,
         global_refs=global_refs,
         segments=segments,
@@ -680,6 +724,8 @@ def build_director_plan(
         run_indices=_parse_run_selection(timeline, len(segments)),
         continuity_enabled=continuity_enabled,
         continuity_overlap_frames=continuity_overlap,
+        seam_dedupe_enabled=bool(seam_dedupe_enabled),
+        seam_judge_frames=int(seam_judge_frames),
         global_ref_audios=global_ref_audios,
     )
 
@@ -753,8 +799,8 @@ def reinforce_rv2v_prompt(
 
 
 def reference_video_for_segment(plan: DirectorPlan, seg: SegmentPlan, num_frames: int) -> torch.Tensor | None:
-    """Optional separate reference video for r2v (not used by v2v — source clip is the ref)."""
-    if seg.task_key != "r2v":
+    """Optional separate reference video for r2v/m2v (not used by v2v — source clip is the ref)."""
+    if not is_r2v_like(seg.task_key):
         return None
     if not _ref_video_has_file(seg.reference_video_meta):
         return None

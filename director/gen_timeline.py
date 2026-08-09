@@ -7,16 +7,16 @@ import logging
 import torch
 
 from ..lib.image_prep import fit_canvas, fit_video_long_edge, cat_frames_variable_size, resolve_output_dimensions
-from ..lib.task_prompts import resolve_task_key
+from ..lib.task_prompts import is_r2v_like, resolve_task_key
 
 log = logging.getLogger("ComfyUI-MiniMaxH3-Director.director.gen")
 
-GEN_BLANK_KEYS = frozenset({"t2v", "r2v", "i2v"})
+GEN_BLANK_KEYS = frozenset({"t2v", "r2v", "m2v", "i2v"})
 GEN_IMAGE_KEYS = frozenset()  # legacy i2v first-frame canvas removed; fl2v owns keyframes
 FL2V_KEYS = frozenset({"fl2v"})
 GEN_TASK_KEYS = GEN_BLANK_KEYS | GEN_IMAGE_KEYS | FL2V_KEYS
-PROMPT_BATCH_KEYS = frozenset({"t2v", "i2v", "r2v", "fl2v", "fl_chain"})
-VIDEO_BATCH_KEYS = frozenset({"t2v", "i2v", "r2v", "fl2v", "fl_chain"})
+PROMPT_BATCH_KEYS = frozenset({"t2v", "i2v", "r2v", "m2v", "fl2v", "fl_chain"})
+VIDEO_BATCH_KEYS = frozenset({"t2v", "i2v", "r2v", "m2v", "fl2v", "fl_chain"})
 IMAGE_BATCH_KEYS = frozenset()
 
 MIN_GEN_FRAMES = 1
@@ -66,9 +66,82 @@ def gen_submode(timeline: dict, task_key: str) -> str:
 def _min_frames_for_task(task_key: str) -> int:
     if task_key in IMAGE_BATCH_KEYS or task_key in ("t2i", "i2i"):
         return MIN_GEN_FRAMES
-    if task_key in ("t2v", "i2v", "r2v"):
+    if task_key in ("t2v", "i2v", "r2v", "m2v"):
         return MIN_GEN_VIDEO_FRAMES
     return MIN_GEN_VIDEO_FRAMES
+
+
+def _timeline_has_motion_video(timeline: dict) -> bool:
+    video = timeline.get("video") or {}
+    if str(video.get("videoFile") or video.get("fileName") or "").strip():
+        return True
+    for clip in timeline.get("videoClips") or []:
+        if isinstance(clip, dict) and str(clip.get("videoFile") or clip.get("fileName") or "").strip():
+            return True
+    return False
+
+
+def _fit_ref_video_frames(clip: torch.Tensor, num_frames: int) -> torch.Tensor:
+    """Trim or pad (repeat last frame) to the generation length."""
+    target = max(1, int(num_frames))
+    n = int(clip.shape[0]) if clip is not None and clip.ndim >= 1 else 0
+    if n <= 0:
+        raise ValueError("动作迁移参考视频没有可解码帧。")
+    if n >= target:
+        return clip[:target]
+    pad = clip[-1:].repeat(target - n, *([1] * (clip.ndim - 1)))
+    return torch.cat([clip, pad], dim=0)
+
+
+def _load_m2v_motion_videos(
+    timeline: dict,
+    seg_data: dict,
+    *,
+    plan_start: int,
+    plan_end: int,
+    load_ref_videos,
+) -> list:
+    """Motion source for m2v: prefer media-track segment, fall back to card refVideos."""
+    from .plan import SegmentRefVideo
+    from ..lib.video_io import load_timeline_segment
+
+    num_frames = max(5, int(plan_end) - int(plan_start))
+    if _timeline_has_motion_video(timeline):
+        src_start = int(seg_data.get("start", plan_start) or plan_start)
+        src_len = int(seg_data.get("length") or 0)
+        if src_len <= 0:
+            src_len = num_frames
+        src_end = max(src_start + 1, src_start + src_len)
+        try:
+            clip = load_timeline_segment(timeline, src_start, src_end)
+        except Exception as exc:
+            raise ValueError(
+                f"动作迁移无法从媒体轨加载动作视频 [{src_start}:{src_end}]：{exc}"
+            ) from exc
+        clip = _fit_ref_video_frames(clip, num_frames)
+        video = timeline.get("video") or {}
+        rel = str(video.get("videoFile") or video.get("fileName") or "").strip()
+        return [
+            SegmentRefVideo(
+                index=0,
+                tensor=clip,
+                video_file=rel,
+                meta={
+                    "source": "media_track",
+                    "start": src_start,
+                    "end": src_end,
+                    "videoFile": rel,
+                },
+            )
+        ]
+
+    # Legacy / fallback: card 视频1–3
+    raw_vids = seg_data.get("refVideos") or seg_data.get("ref_videos") or []
+    legacy = seg_data.get("referenceVideo") or seg_data.get("reference_video") or {}
+    if isinstance(legacy, dict) and (legacy.get("videoFile") or legacy.get("fileName")):
+        if not any(int(v.get("index", v.get("slot", -1))) == 0 for v in raw_vids if isinstance(v, dict)):
+            raw_vids = [{"index": 0, **legacy}, *list(raw_vids or [])]
+    return load_ref_videos(raw_vids, timeline, num_frames)
 
 
 def _segment_frame_count(raw: dict, *, default: int, task_key: str) -> int:
@@ -418,12 +491,18 @@ def build_gen_director_plan(
                 seg_task_key,
                 _load_ref_audios(global_block.get("refAudios") or global_block.get("ref_audios") or []),
             )
+            # 整局仍可能带组级参考音频（素材卡片）
+            if not seg_ref_audios:
+                seg_ref_audios = segment_ref_audios_for_context(
+                    seg_task_key,
+                    _load_ref_audios(seg_data.get("refAudios") or seg_data.get("ref_audios") or []),
+                )
         else:
             seg_ref_audios = segment_ref_audios_for_context(
                 seg_task_key,
                 _load_ref_audios(seg_data.get("refAudios") or seg_data.get("ref_audios") or []),
             )
-            if seg_task_key == "r2v":
+            if is_r2v_like(seg_task_key) and seg_task_key != "m2v":
                 seg_len = max(5, int(end) - int(start))
                 raw_vids = seg_data.get("refVideos") or seg_data.get("ref_videos") or []
                 # Backward compat: single referenceVideo → slot 0
@@ -432,7 +511,25 @@ def build_gen_director_plan(
                     if not any(int(v.get("index", v.get("slot", -1))) == 0 for v in raw_vids if isinstance(v, dict)):
                         raw_vids = [{"index": 0, **legacy}, *list(raw_vids or [])]
                 seg_ref_videos = _load_ref_videos(raw_vids, timeline, seg_len)
-        if seg_task_key in ("r2v", "r2i", "i2v") and not seg_refs and not seg_ref_videos and not seg_ref_audios:
+        if seg_task_key == "m2v":
+            # 动作源：媒体轨分段（可裁切）；生成帧数仍用本段 frameCount/秒数
+            seg_ref_videos = _load_m2v_motion_videos(
+                timeline,
+                seg_data,
+                plan_start=start,
+                plan_end=end,
+                load_ref_videos=_load_ref_videos,
+            )
+            if not seg_ref_videos:
+                raise ValueError(
+                    f"动作迁移 (m2v) 第 {idx + 1} 组缺少动作视频："
+                    "请在媒体轨上传单路动作/运镜视频（可预览、裁切、均分）。"
+                )
+            if not seg_refs:
+                raise ValueError(
+                    f"动作迁移 (m2v) 第 {idx + 1} 组缺少参考图：请上传图片1（角色/外观）。"
+                )
+        elif (is_r2v_like(seg_task_key) or seg_task_key in ("r2i", "i2v")) and not seg_refs and not seg_ref_videos and not seg_ref_audios:
             log.warning(
                 "gen segment #%d task=%s has no reference media — will behave like "
                 "t2v/t2i. Upload 图片/音频/视频 on this material card.",
@@ -468,17 +565,32 @@ def build_gen_director_plan(
     raw["timelineMode"] = timeline_mode
     src_w, src_h = _resolve_gen_image_source_dims(segment_ranges, global_block, output_block)
 
-    from .segment_continuity import CONTINUITY_TASK_KEYS, resolve_continuity_settings
+    from .segment_continuity import (
+        CONTINUITY_TASK_KEYS,
+        resolve_continuity_settings,
+        resolve_seam_dedupe_settings,
+    )
 
     continuity_enabled, continuity_overlap = resolve_continuity_settings(
         timeline, segment_count=max(1, len(segments))
     )
     if task_key not in CONTINUITY_TASK_KEYS:
         continuity_enabled, continuity_overlap = False, 0
+    seam_dedupe_enabled, seam_judge_frames = resolve_seam_dedupe_settings(
+        timeline, segment_count=max(1, len(segments))
+    )
+    # 与链式连贯同一任务范围
+    if task_key not in CONTINUITY_TASK_KEYS:
+        seam_dedupe_enabled = False
     if continuity_enabled:
         raw.setdefault("output", {})
         if isinstance(raw["output"], dict):
             raw["output"]["continuityEnabled"] = True
+    if seam_dedupe_enabled:
+        raw.setdefault("output", {})
+        if isinstance(raw["output"], dict):
+            raw["output"]["seamDedupeEnabled"] = True
+            raw["output"]["seamJudgeFrames"] = int(seam_judge_frames)
 
     return DirectorPlan(
         frame_rate=float(timeline.get("frameRate") or frame_rate or 24),
@@ -501,4 +613,6 @@ def build_gen_director_plan(
         run_indices=_parse_run_selection(timeline, len(segments)),
         continuity_enabled=bool(continuity_enabled),
         continuity_overlap_frames=int(continuity_overlap or 0),
+        seam_dedupe_enabled=bool(seam_dedupe_enabled),
+        seam_judge_frames=int(seam_judge_frames),
     )

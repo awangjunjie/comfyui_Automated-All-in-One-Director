@@ -1,5 +1,5 @@
 /**
- * First/last-frame (fl2v) timeline — explicit shot groups.
+ * First/last-frame (fl2v) shot groups for the H3 desk workbench.
  * Each shot = { startImage (required to run), endImage (optional → i2v), durationSec }.
  * Total duration = sum of shot durations. Timeline shows one block per shot.
  */
@@ -19,55 +19,91 @@ import {
 } from "./minimax_gen_timeline.js";
 
 export const FL2V_STYLES = `
-.bd-fl2v-detail-wrap{width:100%;box-sizing:border-box;display:flex;flex-direction:column;gap:8px;min-height:0}
-.bd-fl2v-detail-wrap.hidden{display:none!important}
-.bd-fl2v-hint{color:#aaa;font-size:11px;line-height:1.45;background:#181818;border:1px solid #333;border-radius:6px;padding:8px 10px;flex-shrink:0}
-.bd-fl2v-hint b{color:#4fff8f;font-weight:600}
-.bd-fl2v-shots{
-  display:flex;flex-wrap:wrap;gap:10px;align-items:stretch;align-content:flex-start;
+.h3d-fl2v-detail-wrap{width:100%;box-sizing:border-box;display:flex;flex-direction:column;gap:8px;min-height:0}
+.h3d-fl2v-detail-wrap.hidden{display:none!important}
+.h3d-fl2v-hint{color:var(--h3d-muted);font-size:11px;line-height:1.45;background:var(--h3d-surface);border:1px solid var(--h3d-border);border-radius:var(--h3d-radius-panel);padding:8px 10px;flex-shrink:0}
+.h3d-fl2v-hint b{color:var(--h3d-accent);font-weight:600}
+.h3d-fl2v-actions{
+  display:flex;flex-wrap:wrap;gap:8px;align-items:center;
+  padding:8px 10px;border:1px solid var(--h3d-border);background:rgba(0,0,0,.18);flex-shrink:0;
+}
+.h3d-fl2v-actions .h3d-meta{margin-left:auto;font-size:11px;color:var(--h3d-muted)}
+.h3d-fl2v-shots{
+  display:flex;flex-direction:column;flex-wrap:nowrap;gap:10px;align-items:stretch;
   max-height:min(52vh,560px);overflow-x:hidden;overflow-y:auto;overscroll-behavior:contain;
   padding-right:2px;scrollbar-gutter:stable;min-height:0;
 }
-.bd-fl2v-shots::-webkit-scrollbar{width:8px}
-.bd-fl2v-shots::-webkit-scrollbar-thumb{background:#3a4458;border-radius:4px}
-.bd-fl2v-shots::-webkit-scrollbar-track{background:#161a22}
-.bd-fl2v-shot{width:220px;box-sizing:border-box;background:#1a1a1a;border:1px solid #333;border-radius:6px;padding:8px;display:flex;flex-direction:column;gap:6px;cursor:default;transition:border-color .15s,opacity .15s}
-.bd-fl2v-shot:hover{border-color:#555}
-.bd-fl2v-shot.selected{border-color:#4fff8f;box-shadow:0 0 0 1px rgba(79,255,143,.35)}
-.bd-fl2v-shot.shot-dragging{opacity:.4}
-.bd-fl2v-shot.shot-drag-over{border-color:#5ec8ff;box-shadow:0 0 0 1px rgba(94,200,255,.45)}
-.bd-fl2v-shot-head{display:flex;align-items:center;justify-content:space-between;gap:6px;cursor:grab;user-select:none}
-.bd-fl2v-shot-head:active{cursor:grabbing}
-.bd-fl2v-shot-head b{color:#ccc;font-size:12px}
-.bd-fl2v-shot-meta{color:#888;font-size:10px}
-.bd-fl2v-slots{display:grid;grid-template-columns:1fr 1fr;gap:6px}
-.bd-fl2v-slot-wrap{position:relative;min-width:0}
-.bd-fl2v-slot{position:relative;aspect-ratio:var(--fl2v-slot-ar,16/9);border:1px dashed #555;border-radius:4px;background:#111;overflow:hidden;display:flex;align-items:center;justify-content:center;cursor:pointer}
-.bd-fl2v-slot.has-img{border-style:solid;border-color:#444;cursor:grab}
-.bd-fl2v-slot.has-img:active{cursor:grabbing}
-.bd-fl2v-slot.drag-over{border-color:#4fff8f;border-style:solid;background:#152018}
-.bd-fl2v-slot.dragging{opacity:.45}
-.bd-fl2v-slot img{height:100%;width:auto;max-height:100%;display:block;pointer-events:none;flex-shrink:0}
-.bd-fl2v-slot .tag{position:absolute;left:4px;top:4px;padding:1px 5px;border-radius:2px;font-size:9px;font-weight:700;line-height:1.4;pointer-events:none}
-.bd-fl2v-slot .tag.start{background:rgba(79,255,143,.92);color:#111}
-.bd-fl2v-slot .tag.end{background:rgba(240,160,48,.92);color:#111}
-.bd-fl2v-slot .ph{color:#666;font-size:10px;text-align:center;padding:4px;line-height:1.35;pointer-events:none}
-/* Clear sits outside the draggable slot so HTML5 DnD cannot steal the click. */
-.bd-fl2v-slot-wrap .x{position:absolute;right:1px;top:1px;width:24px;height:24px;padding:0;margin:0;border:0;box-sizing:border-box;display:none;align-items:center;justify-content:center;border-radius:4px;background:rgba(0,0,0,.78);color:#ff8a8a;font-size:18px;font-weight:700;line-height:1;cursor:pointer;z-index:6;user-select:none;-webkit-user-select:none;font-family:inherit;appearance:none;-webkit-appearance:none}
-.bd-fl2v-slot-wrap.has-img:hover .x,
-.bd-fl2v-slot-wrap:focus-within .x{display:flex}
-@media (hover:none){.bd-fl2v-slot-wrap.has-img .x{display:flex}}
-.bd-fl2v-slot-wrap .x:hover{background:rgba(160,30,30,.95);color:#fff}
-.bd-fl2v-shot-row{display:flex;align-items:center;gap:6px;color:#ddd;font-size:11px}
-.bd-fl2v-shot-row input{width:56px}
-.bd-fl2v-detail{width:100%;box-sizing:border-box;display:flex;flex-direction:column;gap:6px;background:#1a1a1a;border:1px solid #333;border-radius:6px;padding:10px;flex-shrink:0}
-.bd-fl2v-detail.hidden{display:none!important}
-.bd-fl2v-detail .bd-label{color:#888;font-size:10px;margin-top:2px}
-.bd-fl2v-detail textarea{width:100%;min-height:64px;background:#141414;border:1px solid #333;border-radius:4px;color:#eee;padding:6px;resize:vertical;font-size:11px;box-sizing:border-box;font-family:inherit;line-height:1.35}
-.bd-fl2v-detail textarea:disabled{opacity:.45;cursor:not-allowed}
-.bd-fl2v-total-wrap{display:inline-flex;align-items:center;gap:6px}
-.bd-fl2v-total-wrap.hidden{display:none!important}
-.bd-fl2v-total-wrap input:disabled{opacity:.75;cursor:default;color:#ccc}
+.h3d-fl2v-shots::-webkit-scrollbar{width:8px}
+.h3d-fl2v-shots::-webkit-scrollbar-thumb{background:#3a4458;border-radius:4px}
+.h3d-fl2v-shots::-webkit-scrollbar-track{background:#161a22}
+.h3d-fl2v-shot{
+  width:100%;box-sizing:border-box;display:flex;flex-direction:column;gap:10px;
+  background:var(--h3d-bg);border:1px solid var(--h3d-border);border-left:3px solid var(--h3d-accent);
+  border-radius:0;padding:12px 14px;cursor:default;transition:border-color .15s,opacity .15s;
+}
+.h3d-fl2v-shot:hover{border-color:#555}
+.h3d-fl2v-shot.selected{border-color:var(--h3d-accent);background:rgba(212,146,58,.06);box-shadow:0 0 0 1px rgba(212,146,58,.28)}
+.h3d-fl2v-shot.shot-dragging{opacity:.4}
+.h3d-fl2v-shot.shot-drag-over{border-color:#5ec8ff;box-shadow:0 0 0 1px rgba(94,200,255,.45)}
+.h3d-fl2v-shot-head{display:flex;align-items:center;justify-content:space-between;gap:8px;cursor:grab;user-select:none}
+.h3d-fl2v-shot-head:active{cursor:grabbing}
+.h3d-fl2v-shot-head b{color:#e8ecf4;font-size:13px;letter-spacing:.02em}
+.h3d-fl2v-shot-meta{color:#93a1b5;font-size:11px}
+.h3d-fl2v-shot-body{
+  display:grid;grid-template-columns:minmax(0,1fr) minmax(132px,168px);
+  gap:12px 14px;align-items:stretch;min-width:0;
+}
+.h3d-fl2v-slots{display:grid;grid-template-columns:1fr 1fr;gap:12px;min-width:0}
+.h3d-fl2v-slot-wrap{position:relative;min-width:0;display:flex;flex-direction:column;gap:6px}
+.h3d-fl2v-slot-cap{display:flex;align-items:center;justify-content:space-between;gap:6px;min-height:18px}
+.h3d-fl2v-slot-cap .tag{padding:2px 7px;border-radius:0;font-size:10px;font-weight:700;letter-spacing:.04em;line-height:1.3}
+.h3d-fl2v-slot-cap .tag.start{background:rgba(212,146,58,.95);color:#1a140c}
+.h3d-fl2v-slot-cap .tag.end{background:rgba(94,177,168,.92);color:#0c1413}
+.h3d-fl2v-slot-cap em{font-style:normal;font-size:10px;color:#93a1b5}
+.h3d-fl2v-slot{
+  position:relative;aspect-ratio:var(--fl2v-slot-ar,16/9);min-height:110px;max-height:168px;
+  border:1px dashed #555;border-radius:0;background:#0a0a0e;overflow:hidden;
+  display:flex;align-items:center;justify-content:center;cursor:pointer;
+}
+.h3d-fl2v-slot.has-img{border-style:solid;border-color:#555;cursor:grab}
+.h3d-fl2v-slot.has-img:active{cursor:grabbing}
+.h3d-fl2v-slot.drag-over{border-color:var(--h3d-accent);border-style:solid;background:#152018}
+.h3d-fl2v-slot.dragging{opacity:.45}
+.h3d-fl2v-slot img{width:100%;height:100%;object-fit:cover;display:block;pointer-events:none}
+.h3d-fl2v-slot .ph{color:#7a8494;font-size:12px;text-align:center;padding:8px;line-height:1.4;pointer-events:none}
+.h3d-fl2v-slot-wrap .x{
+  position:absolute;right:6px;top:28px;width:26px;height:26px;padding:0;margin:0;border:0;box-sizing:border-box;
+  display:none;align-items:center;justify-content:center;border-radius:0;background:rgba(0,0,0,.78);
+  color:#ff8a8a;font-size:18px;font-weight:700;line-height:1;cursor:pointer;z-index:6;user-select:none;
+  font-family:inherit;appearance:none;-webkit-appearance:none;
+}
+.h3d-fl2v-slot-wrap.has-img:hover .x,
+.h3d-fl2v-slot-wrap:focus-within .x{display:flex}
+@media (hover:none){.h3d-fl2v-slot-wrap.has-img .x{display:flex}}
+.h3d-fl2v-slot-wrap .x:hover{background:rgba(160,30,30,.95);color:#fff}
+.h3d-fl2v-shot-side{
+  display:flex;flex-direction:column;gap:10px;justify-content:center;
+  padding:12px;border:1px solid var(--h3d-border);background:rgba(0,0,0,.2);min-width:0;
+}
+.h3d-fl2v-shot-side .h3d-fl2v-shot-row{display:flex;flex-direction:column;align-items:stretch;gap:6px;color:#ddd;font-size:11px;margin:0}
+.h3d-fl2v-shot-side .h3d-fl2v-shot-row span{color:#93a1b5;font-size:10px;letter-spacing:.06em}
+.h3d-fl2v-shot-side .h3d-fl2v-shot-row .h3d-fl2v-dur{
+  display:flex;align-items:center;gap:6px;
+}
+.h3d-fl2v-shot-side input{width:72px;text-align:center}
+.h3d-fl2v-shot-side .h3d-fl2v-fc{font-size:11px;color:#93a1b5}
+@media(max-width:720px){
+  .h3d-fl2v-shot-body{grid-template-columns:1fr}
+  .h3d-fl2v-slot{min-height:96px;max-height:140px}
+}
+.h3d-fl2v-detail{width:100%;box-sizing:border-box;display:flex;flex-direction:column;gap:6px;background:#1a1a1a;border:1px solid #333;border-radius:6px;padding:10px;flex-shrink:0}
+.h3d-fl2v-detail.hidden{display:none!important}
+.h3d-fl2v-detail .h3d-label{color:#888;font-size:10px;margin-top:2px}
+.h3d-fl2v-detail textarea{width:100%;min-height:64px;background:#141414;border:1px solid #333;border-radius:4px;color:#eee;padding:6px;resize:vertical;font-size:11px;box-sizing:border-box;font-family:inherit;line-height:1.35}
+.h3d-fl2v-detail textarea:disabled{opacity:.45;cursor:not-allowed}
+.h3d-fl2v-total-wrap{display:inline-flex;align-items:center;gap:6px}
+.h3d-fl2v-total-wrap.hidden{display:none!important}
+.h3d-fl2v-total-wrap input:disabled{opacity:.75;cursor:default;color:#ccc}
 `;
 
 const DEFAULT_TOTAL = defaultFrameCount("fl2v");
@@ -490,7 +526,8 @@ export function setFl2vTotalDurationSec(editor, seconds) {
 export function ensureFl2vTimeline(editor) {
     const t = editor.timeline;
     t.timelineMode = "fl2v";
-    t.editMode = "segment";
+    // Keep 整局/分镜; only default to 分镜 when unset.
+    if (t.editMode !== "global" && t.editMode !== "segment") t.editMode = "segment";
     t.video = t.video || {};
     t.video.videoFile = "";
     t.video.fileName = "";
@@ -672,18 +709,22 @@ export function openFl2vInsert() {}
 
 export function mountFl2vPanel(parent) {
     const wrap = document.createElement("div");
-    wrap.className = "bd-fl2v-detail-wrap";
+    wrap.className = "h3d-fl2v-detail-wrap";
     wrap.innerHTML = `
-        <div class="bd-fl2v-hint">
-            <b>怎么用</b>：
-            ① 点<strong>添加一组</strong>创建一镜；每组有<strong>首帧</strong>（必传）和<strong>尾帧</strong>（可选，空=图生视频）；
-            ② 拖时间轴右边界改本镜时长；<strong>总时长 = 各组之和</strong>；
-            ③ 拖镜卡片<strong>标题栏</strong>可互换组位置；图位之间拖图：同组互换、跨组复制；
-            ④ 选中一组后可编辑提示词，或点<strong>删除选中组</strong>。
+        <div class="h3d-fl2v-hint">
+            <div class="h3d-section-title"><b>镜头清单</b><span>纵向列表 · 左图右参</span></div>
+            ① 下方<strong>添加一组</strong>新建一镜（首帧必传，尾帧可选）；
+            ② 拖时间轴改时长，总时长=各组之和；
+            ③ 拖标题栏排序；④ 选中后编辑提示词。
         </div>
-        <div class="bd-fl2v-shots" data-r="fl2v-shots"></div>
-        <div class="bd-fl2v-detail hidden" data-r="fl2v-detail">
-            <span class="bd-label">本镜提示词</span>
+        <div class="h3d-fl2v-actions" data-r="fl2v-actions">
+            <button type="button" class="h3d-btn h3d-btn-primary" data-a="fl2v-add-shot-inner" title="添加一组首尾帧（首帧必传，尾帧可选）">添加一组</button>
+            <button type="button" class="h3d-btn h3d-btn-danger" data-a="fl2v-del-shot-inner" title="删除当前选中的一组首尾帧">删除选中组</button>
+            <span class="h3d-meta">在清单内管理分镜，不占用顶栏</span>
+        </div>
+        <div class="h3d-fl2v-shots" data-r="fl2v-shots"></div>
+        <div class="h3d-fl2v-detail hidden" data-r="fl2v-detail">
+            <span class="h3d-label">本镜提示词</span>
             <textarea data-r="fl2v-prompt" placeholder="描述这一镜的运动/变化（可选）"></textarea>
             <textarea data-r="fl2v-negative" class="hidden" hidden aria-hidden="true"></textarea>
         </div>
@@ -692,7 +733,10 @@ export function mountFl2vPanel(parent) {
     parent.appendChild(wrap);
     return {
         root: wrap,
-        hint: wrap.querySelector(".bd-fl2v-hint"),
+        hint: wrap.querySelector(".h3d-fl2v-hint"),
+        actions: wrap.querySelector('[data-r="fl2v-actions"]'),
+        addBtn: wrap.querySelector('[data-a="fl2v-add-shot-inner"]'),
+        delBtn: wrap.querySelector('[data-a="fl2v-del-shot-inner"]'),
         shotsEl: wrap.querySelector('[data-r="fl2v-shots"]'),
         detail: wrap.querySelector('[data-r="fl2v-detail"]'),
         prompt: wrap.querySelector('[data-r="fl2v-prompt"]'),
@@ -805,7 +849,7 @@ export function swapFl2vShots(editor, fromIndex, toIndex) {
 function bindFl2vShotCardDnD(editor, cardEl, shotIndex) {
     // Only the header is draggable so slot/clear clicks are never stolen by card DnD.
     cardEl.draggable = false;
-    const handle = cardEl.querySelector(".bd-fl2v-shot-head");
+    const handle = cardEl.querySelector(".h3d-fl2v-shot-head");
     if (handle) {
         handle.draggable = true;
         handle.title = "拖动此处互换镜头位置";
@@ -826,7 +870,7 @@ function bindFl2vShotCardDnD(editor, cardEl, shotIndex) {
         handle.addEventListener("dragend", () => {
             cardEl.classList.remove("shot-dragging");
             editor._fl2vShotDragFrom = null;
-            editor.fl2vUi?.shotsEl?.querySelectorAll(".bd-fl2v-shot.shot-drag-over")
+            editor.fl2vUi?.shotsEl?.querySelectorAll(".h3d-fl2v-shot.shot-drag-over")
                 .forEach((el) => el.classList.remove("shot-drag-over"));
             setTimeout(() => { editor._fl2vShotDrag = false; }, 0);
         });
@@ -957,7 +1001,7 @@ function bindFl2vSlotDnD(editor, slotEl, shotIndex, slotKind) {
     slotEl.addEventListener("dragend", () => {
         slotEl.classList.remove("dragging");
         editor._fl2vDragFrom = null;
-        editor.fl2vUi?.shotsEl?.querySelectorAll(".bd-fl2v-slot.drag-over")
+        editor.fl2vUi?.shotsEl?.querySelectorAll(".h3d-fl2v-slot.drag-over")
             .forEach((el) => el.classList.remove("drag-over"));
         setTimeout(() => { editor._fl2vSlotDrag = false; }, 0);
     });
@@ -1042,10 +1086,16 @@ function renderFl2vShotCards(editor) {
         || editor.timeline?.output?.continuity_enabled === true;
     const isChain = taskKey === "fl_chain" || contOn;
     ui.shotsEl.innerHTML = "";
-    shots.forEach((shot, i) => {
+    const globalScope = (editor.timeline?.editMode || "global") === "global";
+    const visibleShots = globalScope
+        ? shots.slice(0, 1).map((shot, i) => ({ shot, i: 0 }))
+        : shots.map((shot, i) => ({ shot, i }));
+    if (ui.actions) ui.actions.classList.toggle("hidden", globalScope);
+    visibleShots.forEach(({ shot, i }) => {
         const card = document.createElement("div");
-        card.className = `bd-fl2v-shot${i === sel ? " selected" : ""}`;
+        card.className = `h3d-fl2v-shot${i === sel || globalScope ? " selected" : ""}`;
         card.dataset.shotIndex = String(i);
+        if (globalScope) card.classList.add("h3d-fl2v-shot-single");
         const startUrl = shot.startImage?.imageFile ? fl2vViewUrl(shot.startImage.imageFile) : "";
         const endUrl = shot.endImage?.imageFile ? fl2vViewUrl(shot.endImage.imageFile) : "";
         const fc = shotFrameCount(shot, fl2vFps(editor));
@@ -1053,39 +1103,47 @@ function renderFl2vShotCards(editor) {
         const startTitle = chainRelay
             ? "首帧可选：留空即可；运行时自动用上一组生成视频的末帧作为本镜首帧"
             : "上传首帧（必传）；可拖到其它图位";
-        const startPh = chainRelay ? "首帧<br>可选·接力" : "首帧<br>必传";
+        const startHint = chainRelay ? "可选 · 接力" : "必传";
+        const startPh = chainRelay ? "点击上传首帧<br>（可留空接力）" : "点击上传首帧";
         const metaLabel = shot.endImage?.imageFile || shot.endImage?.imageB64
             ? "首尾帧"
             : (chainRelay ? "链式接力" : "图生视频");
         card.innerHTML = `
-            <div class="bd-fl2v-shot-head">
-                <b>镜 ${i + 1}</b>
-                <span class="bd-fl2v-shot-meta">${metaLabel} · ${fc}f</span>
+            <div class="h3d-fl2v-shot-head">
+                <b>${globalScope ? "整局成片" : `镜 ${i + 1}`}</b>
+                <span class="h3d-fl2v-shot-meta">${metaLabel} · ${fc} 帧</span>
             </div>
-            <div class="bd-fl2v-slots">
-                <div class="bd-fl2v-slot-wrap${startUrl ? " has-img" : ""}">
-                    <div class="bd-fl2v-slot${startUrl ? " has-img" : ""}" data-slot="start" title="${startTitle}">
-                        <span class="tag start">START</span>
+            <div class="h3d-fl2v-shot-body">
+              <div class="h3d-fl2v-slots">
+                <div class="h3d-fl2v-slot-wrap${startUrl ? " has-img" : ""}">
+                    <div class="h3d-fl2v-slot-cap"><span class="tag start">首帧</span><em>${startHint}</em></div>
+                    <div class="h3d-fl2v-slot${startUrl ? " has-img" : ""}" data-slot="start" title="${startTitle}">
                         ${startUrl ? `<img src="${startUrl}" alt="">` : `<span class="ph">${startPh}</span>`}
                     </div>
                     ${startUrl ? `<button type="button" class="x" data-clear="start" title="清除" draggable="false">×</button>` : ""}
                 </div>
-                <div class="bd-fl2v-slot-wrap${endUrl ? " has-img" : ""}">
-                    <div class="bd-fl2v-slot${endUrl ? " has-img" : ""}" data-slot="end" title="上传尾帧（可选）；可拖到其它图位">
-                        <span class="tag end">END</span>
-                        ${endUrl ? `<img src="${endUrl}" alt="">` : '<span class="ph">尾帧<br>可选</span>'}
+                <div class="h3d-fl2v-slot-wrap${endUrl ? " has-img" : ""}">
+                    <div class="h3d-fl2v-slot-cap"><span class="tag end">尾帧</span><em>可选</em></div>
+                    <div class="h3d-fl2v-slot${endUrl ? " has-img" : ""}" data-slot="end" title="上传尾帧（可选）；可拖到其它图位">
+                        ${endUrl ? `<img src="${endUrl}" alt="">` : '<span class="ph">点击上传尾帧<br>（可留空）</span>'}
                     </div>
                     ${endUrl ? `<button type="button" class="x" data-clear="end" title="清除" draggable="false">×</button>` : ""}
                 </div>
+              </div>
+              <aside class="h3d-fl2v-shot-side">
+                <label class="h3d-fl2v-shot-row" title="本镜时长（秒）">
+                  <span>本镜时长</span>
+                  <span class="h3d-fl2v-dur">
+                    <input type="number" class="h3d-num" data-r="shot-sec" min="${minDurationSec()}" max="${maxDurationSec()}" step="0.1" value="${shot.durationSec}">
+                    秒
+                  </span>
+                </label>
+                <div class="h3d-fl2v-fc">${fc} 帧 · FPS 随时间线</div>
+              </aside>
             </div>
-            <label class="bd-fl2v-shot-row" title="本镜时长（秒）">
-                时长
-                <input type="number" class="bd-num" data-r="shot-sec" min="${minDurationSec()}" max="${maxDurationSec()}" step="0.1" value="${shot.durationSec}">
-                秒
-            </label>
         `;
         card.addEventListener("click", (e) => {
-            if (e.target.closest("[data-slot], [data-clear], input, .bd-fl2v-slot-wrap")) return;
+            if (e.target.closest("[data-slot], [data-clear], input, .h3d-fl2v-slot-wrap")) return;
             if (editor._fl2vShotDrag || editor._fl2vSlotDrag) return;
             if (editor.selectedIndex !== i) flushFl2vPromptDraft(editor);
             editor.selectedIndex = i;
@@ -1151,17 +1209,25 @@ export function updateFl2vDetailUI(editor) {
         || editor.timeline?.output?.continuity_enabled === true;
     const isChain = taskKey === "fl_chain" || contOn;
     if (ui.hint) {
-        ui.hint.innerHTML = isChain
-            ? `<b>链式连贯已开启</b>${taskKey === "fl_chain" ? "（fl_chain）" : ""}：
-            ① 第 1 组<strong>必须上传首帧</strong>；后续组首帧可选（运行时默认用<strong>上一组生成视频的末帧</strong>接力）；
-            ② 每组尾帧可选（有则锁本镜结尾）；拖缘调时长，总时长=各组之和；
-            ③ 按顺序 Queue，场景过渡更连贯。勿对中间镜单独「选择运行」跳过，否则接力会断。
-            ④ 可在输出栏关闭「链式连贯」恢复每组独立首帧。`
-            : `<b>怎么用</b>：
-            ① 点<strong>添加一组</strong>创建一镜；每组有<strong>首帧</strong>（必传）和<strong>尾帧</strong>（可选，空=图生视频）；
-            ② 拖时间轴右边界改本镜时长；<strong>总时长 = 各组之和</strong>；
-            ③ 需要分镜连贯时，打开输出栏<strong>链式连贯</strong>：上镜末帧→下镜首帧；
-            ④ 拖镜卡片<strong>标题栏</strong>可互换组位置；选中一组后可编辑提示词。`;
+        const globalScope = (editor.timeline?.editMode || "global") === "global";
+        if (globalScope) {
+            ui.hint.innerHTML = `<b>整局模式 · 单视频</b>：
+            功能与分镜一致，但只编辑 / 生成<strong>第 1 镜成片</strong>。
+            上传<strong>首帧</strong>（必传）与<strong>尾帧</strong>（可选）；改本镜时长后 Queue。
+            需要多镜时切到顶栏<strong>分镜模式</strong>。`;
+        } else {
+            ui.hint.innerHTML = isChain
+                ? `<b>链式连贯已开启</b>${taskKey === "fl_chain" ? "（fl_chain）" : ""}：
+                ① 第 1 组<strong>必须上传首帧</strong>；后续组首帧可选（运行时默认用<strong>上一组生成视频的末帧</strong>接力）；
+                ② 每组尾帧可选（有则锁本镜结尾）；拖缘调时长，总时长=各组之和；
+                ③ 按顺序 Queue，场景过渡更连贯。勿对中间镜单独「选择运行」跳过，否则接力会断。
+                ④ 可在输出栏关闭「链式连贯」恢复每组独立首帧。`
+                : `<b>怎么用</b>：
+                ① 点<strong>添加一组</strong>创建一镜；每组有<strong>首帧</strong>（必传）和<strong>尾帧</strong>（可选，空=图生视频）；
+                ② 拖时间轴右边界改本镜时长；<strong>总时长 = 各组之和</strong>；
+                ③ 需要分镜连贯时，打开输出栏<strong>链式连贯</strong>：上镜末帧→下镜首帧；
+                ④ 拖镜卡片<strong>标题栏</strong>可互换组位置；选中一组后可编辑提示词。`;
+        }
     }
     if (ui.totalInput && ui.totalInput !== document.activeElement) {
         ui.totalInput.value = String(getFl2vTotalDurationSec(editor));
@@ -1202,6 +1268,15 @@ export function updateFl2vDetailUI(editor) {
 export function bindFl2vEvents(editor) {
     const ui = editor.fl2vUi;
     if (!ui) return;
+
+    ui.addBtn?.addEventListener("click", (e) => {
+        e.stopPropagation();
+        openFl2vUpload(editor);
+    });
+    ui.delBtn?.addEventListener("click", (e) => {
+        e.stopPropagation();
+        editor.deleteSelectedSegment?.();
+    });
 
     // Total is read-only (sum of shots); ignore edits.
     ui.totalInput?.addEventListener("keydown", (e) => e.stopPropagation());
@@ -1381,7 +1456,7 @@ export function drawFl2vSegmentThumbnails(editor, ctx, seg, startX, pxWidth, y0,
     ctx.font = "bold 9px sans-serif";
     ctx.textAlign = "left";
     ctx.textBaseline = "middle";
-    ctx.fillStyle = "rgba(79,255,143,0.92)";
+    ctx.fillStyle = "rgba(212,146,58,0.92)";
     ctx.fillRect(startX + 4, badgeY, 38, 14);
     ctx.fillStyle = "#111";
     ctx.fillText("START", startX + 8, badgeY + 7);
@@ -1441,7 +1516,7 @@ export function buildFl2vPayloadFields(editor) {
     });
     return {
         timelineMode: "fl2v",
-        editMode: "segment",
+        editMode: editor.timeline?.editMode === "global" ? "global" : "segment",
         shots,
         keyframes: editor.timeline.keyframes || [],
         segments: (editor.timeline.segments || []).map((s) => ({
@@ -1480,30 +1555,36 @@ export function setFl2vToolbar(editor, enabled) {
         editor.root?.querySelector('[data-a="split"]'),
         editor.root?.querySelector('[data-a="smart-split"]'),
         editor.root?.querySelector('[data-a="equal"]'),
-        editor.root?.querySelector('[data-a="mode-global"]'),
-        editor.root?.querySelector('[data-a="mode-segment"]'),
+        // Keep 整局/分镜 switch available for fl2v single-vs-multi shot workflows.
     ];
     for (const btn of disable) {
         if (!btn) continue;
         btn.disabled = enabled;
-        btn.classList.toggle("bd-disabled", enabled);
+        btn.classList.toggle("h3d-disabled", enabled);
         btn.classList.toggle("hidden", enabled);
     }
     if (editor.equalCountInput) {
         editor.equalCountInput.disabled = enabled;
         editor.equalCountInput.classList.toggle("hidden", enabled);
     }
-    // Hide legacy "upload video" — use 添加一组 instead.
+    // fl2v: hide outer material/edit shot controls — add/delete live inside 镜头清单.
     if (editor.btnVideo) {
         editor.btnVideo.classList.toggle("hidden", enabled);
         editor.btnVideo.disabled = enabled;
     }
-    const del = editor.root?.querySelector('[data-a="del"]');
-    if (del) {
-        del.disabled = false;
-        del.classList.remove("bd-disabled", "hidden");
-        del.textContent = enabled ? "删除选中组" : "删除片段";
-        del.title = enabled ? "删除当前选中的一组首尾帧" : "删除选中片段并裁剪视频，时间轴自动衔接";
+    const outerDel = editor.root?.querySelector('.h3d-toolbar-wrap [data-a="del"]')
+        || editor.root?.querySelector('[data-a="del"]');
+    if (outerDel) {
+        if (enabled) {
+            outerDel.classList.add("hidden");
+            outerDel.disabled = true;
+            outerDel.classList.add("h3d-disabled");
+        } else {
+            outerDel.classList.remove("hidden", "h3d-disabled");
+            outerDel.disabled = false;
+            outerDel.textContent = "删除片段";
+            outerDel.title = "删除选中片段并裁剪视频，时间轴自动衔接";
+        }
     }
     for (const sel of ['[data-a="fl2v-insert-before"]', '[data-a="fl2v-insert-after"]', '[data-a="fl2v-replace"]']) {
         const btn = editor.root?.querySelector(sel);
@@ -1512,20 +1593,47 @@ export function setFl2vToolbar(editor, enabled) {
             btn.disabled = true;
         }
     }
-    const addBtn = editor.root?.querySelector('[data-a="fl2v-add-shot"]');
-    if (addBtn) {
-        addBtn.classList.toggle("hidden", !enabled);
-        addBtn.disabled = !enabled;
+    // Keep legacy outer add hidden; inner panel owns add/delete.
+    const outerAdd = editor.root?.querySelector('.h3d-toolbar-wrap [data-a="fl2v-add-shot"]')
+        || editor.root?.querySelector('[data-a="fl2v-add-shot"]');
+    if (outerAdd) {
+        outerAdd.classList.add("hidden");
+        outerAdd.disabled = true;
     }
     updateFl2vToolbarBtns(editor);
 }
 
+function _toolGroupHasVisibleControls(group) {
+    if (!group) return false;
+    return !!group.querySelector("button:not(.hidden), input:not(.hidden), select:not(.hidden), label:not(.hidden)");
+}
+
 export function updateFl2vToolbarBtns(editor) {
-    const addBtn = editor?.root?.querySelector?.('[data-a="fl2v-add-shot"]');
-    if (addBtn) {
-        const show = !!editor?.isFl2vMode?.();
-        addBtn.classList.toggle("hidden", !show);
-        addBtn.disabled = !show;
+    const outerAdd = editor?.root?.querySelector?.('.h3d-toolbar-wrap [data-a="fl2v-add-shot"]')
+        || editor?.root?.querySelector?.('[data-a="fl2v-add-shot"]');
+    if (outerAdd) {
+        outerAdd.classList.add("hidden");
+        outerAdd.disabled = true;
+    }
+    const ui = editor?.fl2vUi;
+    const show = !!editor?.isFl2vMode?.();
+    ui?.actions?.classList.toggle("hidden", !show);
+    if (ui?.addBtn) {
+        ui.addBtn.disabled = !show;
+        ui.addBtn.classList.toggle("h3d-disabled", !show);
+    }
+    if (ui?.delBtn) {
+        ui.delBtn.disabled = !show;
+        ui.delBtn.classList.toggle("h3d-disabled", !show);
+    }
+    // Hide empty outer 素材/剪辑 shells once shot controls moved into the list.
+    const toolbar = editor?.root?.querySelector?.(".h3d-toolbar-wrap");
+    if (toolbar) {
+        for (const group of toolbar.querySelectorAll(".h3d-tool-group")) {
+            const label = group.querySelector(".h3d-tool-label")?.textContent?.trim() || "";
+            if (label !== "素材" && label !== "剪辑") continue;
+            group.classList.toggle("hidden", show || !_toolGroupHasVisibleControls(group));
+        }
     }
 }
 

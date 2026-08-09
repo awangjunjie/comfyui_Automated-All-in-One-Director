@@ -141,7 +141,7 @@ def director_mode_from_task_key(task_key: str) -> str:
         return "FL2VA"
     if key in {"i2v", "i2i"}:
         return "I2VA"
-    if key in {"r2v", "r2i", "rv2v", "vi2v", "vrc2v", "v2v", "ads2v", "mv2v"}:
+    if key in {"r2v", "m2v", "r2i", "rv2v", "vi2v", "vrc2v", "v2v", "ads2v", "mv2v"}:
         return "REF2VA"
     return "T2VA"
 

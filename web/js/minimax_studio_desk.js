@@ -1,4 +1,4 @@
-/** Studio desk panel embedded into official MiniMaxH3Director timeline UI. */
+/** Director desk panel embedded into H3 timeline workbench. */
 
 import { app } from "../../scripts/app.js";
 import { api } from "../../scripts/api.js";
@@ -12,6 +12,8 @@ import {
 } from "./minimax_gen_timeline.js";
 import { normalizeImageBatchSegments } from "./minimax_image_batch.js";
 import { syncFl2vFromShots, updateFl2vDetailUI, newFl2vShot } from "./minimax_fl2v.js";
+import { ensureH3dTheme } from "./h3d_theme.js";
+import { applyBinderShell } from "./h3d_binder.js";
 
 function setNodeWidget(node, name, value) {
     const w = node?.widgets?.find((x) => x.name === name);
@@ -373,9 +375,9 @@ function renderGuideRefs(editor) {
     box.innerHTML = "";
     idir.guide_refs.forEach((item, idx) => {
         const card = document.createElement("div");
-        card.className = "bd-guide-card";
+        card.className = "h3d-guide-card";
         const thumb = document.createElement("div");
-        thumb.className = "bd-guide-thumb";
+        thumb.className = "h3d-guide-thumb";
         if (item.imageFile) {
             const img = document.createElement("img");
             img.src = guideViewUrl(item.imageFile);
@@ -423,10 +425,10 @@ function renderGuideRefs(editor) {
             editor.commit?.(false, { syncTimeline: true });
         };
         const actions = document.createElement("div");
-        actions.className = "bd-guide-actions";
+        actions.className = "h3d-guide-actions";
         const clearBtn = document.createElement("button");
         clearBtn.type = "button";
-        clearBtn.className = "bd-btn";
+        clearBtn.className = "h3d-btn";
         clearBtn.textContent = "清图";
         clearBtn.title = "清除图片，保留卡片";
         clearBtn.disabled = !item.imageFile;
@@ -438,7 +440,7 @@ function renderGuideRefs(editor) {
         };
         const delBtn = document.createElement("button");
         delBtn.type = "button";
-        delBtn.className = "bd-btn bd-guide-del";
+        delBtn.className = "h3d-btn h3d-guide-del";
         delBtn.textContent = "删除";
         delBtn.title = "删除此参考卡片";
         delBtn.onclick = (e) => {
@@ -457,7 +459,7 @@ function renderGuideRefs(editor) {
     });
     if (!idir.guide_refs.length) {
         const empty = document.createElement("div");
-        empty.className = "bd-meta";
+        empty.className = "h3d-meta";
         empty.style.cssText = "font-size:11px;color:#8b93a7";
         empty.textContent = "暂无导演参考图。可点「+ 人物/场景」添加，或勾选下方「生成人物/场景参考」由导演自动出图。";
         box.appendChild(empty);
@@ -547,7 +549,7 @@ function ensureGenPlan(idir, segments) {
 
 function makeRoleChecks(row, onChange) {
     const wrap = document.createElement("div");
-    wrap.className = "bd-idir-targets";
+    wrap.className = "h3d-idir-targets";
     GEN_ROLE_KEYS.forEach(({ key, label }) => {
         const lab = document.createElement("label");
         const cb = document.createElement("input");
@@ -575,10 +577,10 @@ function renderGenPlanUI(editor) {
     box.innerHTML = "";
 
     const globalHead = document.createElement("div");
-    globalHead.className = "bd-studio-row";
+    globalHead.className = "h3d-studio-row";
     globalHead.style.cssText = "justify-content:space-between;margin-bottom:2px";
     globalHead.innerHTML = `<b style="font-size:12px;color:#c8d0e0">全局参考</b>
-      <span class="bd-meta" style="font-size:10px;color:#8b93a7">写入全局图片槽并标注</span>`;
+      <span class="h3d-meta" style="font-size:10px;color:#8b93a7">写入全局图片槽并标注</span>`;
     box.appendChild(globalHead);
     box.appendChild(makeRoleChecks(idir.global_gen, () => {
         ensureGenPlan(idir, segs);
@@ -586,17 +588,17 @@ function renderGenPlanUI(editor) {
     }));
 
     const groupHead = document.createElement("div");
-    groupHead.className = "bd-studio-row";
+    groupHead.className = "h3d-studio-row";
     groupHead.style.cssText = "justify-content:space-between;margin:8px 0 2px;flex-wrap:wrap;gap:4px";
     const title = document.createElement("b");
     title.style.cssText = "font-size:12px;color:#c8d0e0";
     title.textContent = "各提示词组（可分别勾选）";
     const actions = document.createElement("span");
-    actions.className = "bd-studio-row";
+    actions.className = "h3d-studio-row";
     actions.style.gap = "4px";
     const btnAll = document.createElement("button");
     btnAll.type = "button";
-    btnAll.className = "bd-btn";
+    btnAll.className = "h3d-btn";
     btnAll.textContent = "全组勾静帧";
     btnAll.onclick = () => {
         idir.groups_gen.forEach((r) => { if (r) r.still = true; });
@@ -605,7 +607,7 @@ function renderGenPlanUI(editor) {
     };
     const btnCopy = document.createElement("button");
     btnCopy.type = "button";
-    btnCopy.className = "bd-btn";
+    btnCopy.className = "h3d-btn";
     btnCopy.textContent = "复制全局到全组";
     btnCopy.onclick = () => {
         const g = idir.global_gen;
@@ -621,7 +623,7 @@ function renderGenPlanUI(editor) {
     };
     const btnClear = document.createElement("button");
     btnClear.type = "button";
-    btnClear.className = "bd-btn";
+    btnClear.className = "h3d-btn";
     btnClear.textContent = "清空各组";
     btnClear.onclick = () => {
         idir.groups_gen.forEach((r) => {
@@ -643,7 +645,7 @@ function renderGenPlanUI(editor) {
 
     if (!segs.length) {
         const empty = document.createElement("div");
-        empty.className = "bd-meta";
+        empty.className = "h3d-meta";
         empty.style.cssText = "font-size:11px;color:#8b93a7";
         empty.textContent = "暂无提示词组。添加分镜后可在此为每组勾选生成内容，并上传本组独立参考图。";
         box.appendChild(empty);
@@ -651,17 +653,17 @@ function renderGenPlanUI(editor) {
     }
 
     const list = document.createElement("div");
-    list.className = "bd-idir-group-plan";
+    list.className = "h3d-idir-group-plan";
     segs.forEach((seg, i) => {
         const row = idir.groups_gen[i] || defaultRoleGen();
         if (!Array.isArray(row.refs)) row.refs = [];
         idir.groups_gen[i] = row;
         const card = document.createElement("div");
-        card.className = "bd-idir-group-card";
+        card.className = "h3d-idir-group-card";
         const top = document.createElement("div");
-        top.className = "bd-idir-group-row";
+        top.className = "h3d-idir-group-row";
         const name = document.createElement("span");
-        name.className = "bd-idir-group-name";
+        name.className = "h3d-idir-group-name";
         name.textContent = seg.label || `分镜${i + 1}`;
         top.appendChild(name);
         top.appendChild(makeRoleChecks(row, () => {
@@ -674,7 +676,7 @@ function renderGenPlanUI(editor) {
         refLab.textContent = "本组独立参考图（优先于全局）";
         card.appendChild(refLab);
         const strip = document.createElement("div");
-        strip.className = "bd-fl-mini-refs";
+        strip.className = "h3d-fl-mini-refs";
         card.appendChild(strip);
         renderMiniRefStrip(strip, row.refs, () => {
             renderGenPlanUI(editor);
@@ -717,7 +719,7 @@ function renderMiniRefStrip(container, refs, onChange, opts = {}) {
     container.innerHTML = "";
     (refs || []).forEach((item, idx) => {
         const card = document.createElement("div");
-        card.className = "bd-fl-mini-ref" + (withRole ? " with-role" : "");
+        card.className = "h3d-fl-mini-ref" + (withRole ? " with-role" : "");
         if (item?.imageFile) {
             const img = document.createElement("img");
             img.src = guideViewUrl(item.imageFile);
@@ -736,7 +738,7 @@ function renderMiniRefStrip(container, refs, onChange, opts = {}) {
         }
         if (withRole) {
             const role = document.createElement("select");
-            role.className = "bd-fl-mini-role";
+            role.className = "h3d-fl-mini-role";
             for (const r of GUIDE_ROLES) {
                 const opt = document.createElement("option");
                 opt.value = r.value;
@@ -773,7 +775,7 @@ function renderMiniRefStrip(container, refs, onChange, opts = {}) {
         container.appendChild(card);
     });
     const add = document.createElement("div");
-    add.className = "bd-fl-mini-ref";
+    add.className = "h3d-fl-mini-ref";
     add.textContent = "+";
     add.title = "添加参考图";
     add.onclick = async () => {
@@ -818,7 +820,7 @@ function renderFlShotsPlan(editor) {
     box.innerHTML = "";
     if (!shots.length) {
         const empty = document.createElement("div");
-        empty.className = "bd-meta";
+        empty.className = "h3d-meta";
         empty.style.cssText = "font-size:11px;color:#8b93a7";
         empty.textContent = "暂无首尾帧组。请先在时间线点「添加一组」。";
         box.appendChild(empty);
@@ -828,13 +830,13 @@ function renderFlShotsPlan(editor) {
     shots.forEach((shot, i) => {
         const fg = ensureShotFlGen(shot);
         const card = document.createElement("div");
-        card.className = "bd-fl-shot-card";
+        card.className = "h3d-fl-shot-card";
         const head = document.createElement("div");
-        head.className = "bd-studio-row";
+        head.className = "h3d-studio-row";
         head.style.cssText = "justify-content:space-between;flex-wrap:wrap;gap:6px";
         head.innerHTML = `<b>第 ${i + 1} 组</b>`;
         const checks = document.createElement("span");
-        checks.className = "bd-idir-targets";
+        checks.className = "h3d-idir-targets";
         checks.style.margin = "0";
         [["gen_start", "生成首帧"], ["gen_end", "生成尾帧"]].forEach(([key, lab]) => {
             const label = document.createElement("label");
@@ -851,28 +853,28 @@ function renderFlShotsPlan(editor) {
 
         const makeFrame = (kind, title) => {
             const block = document.createElement("div");
-            block.className = "bd-fl-frame-block";
+            block.className = "h3d-fl-frame-block";
             const promptKey = kind === "start" ? "start_prompt" : "end_prompt";
             const refsKey = kind === "start" ? "start_refs" : "end_refs";
-            block.innerHTML = `<div style="font-size:11px;color:#9aa3b5;margin-bottom:2px">${title}</div>`;
+            block.innerHTML = `<div style="font-size:11px;color:#9aa3b5;margin-bottom:4px">${title}</div>`;
             const ta = document.createElement("textarea");
             ta.placeholder = `${title}提示词（可点①自动生成）`;
-            ta.style.cssText = "min-height:52px;font-size:11px;width:100%;box-sizing:border-box";
+            ta.style.cssText = "min-height:88px;font-size:11px;width:100%;box-sizing:border-box";
             ta.value = fg[promptKey] || "";
             ta.dataset.flPrompt = `${i}:${kind}`;
             const writePrompt = () => { fg[promptKey] = ta.value; };
             ta.oninput = writePrompt;
             ta.onchange = () => { writePrompt(); commit(); };
             const field = document.createElement("div");
-            field.className = "bd-studio-field";
+            field.className = "h3d-studio-field";
             field.appendChild(ta);
             block.appendChild(field);
             const refLab = document.createElement("div");
-            refLab.style.cssText = "font-size:10px;color:#8b93a7;margin:2px 0";
+            refLab.style.cssText = "font-size:10px;color:#8b93a7;margin:6px 0 2px";
             refLab.textContent = `${title}独立参考图`;
             block.appendChild(refLab);
             const strip = document.createElement("div");
-            strip.className = "bd-fl-mini-refs";
+            strip.className = "h3d-fl-mini-refs";
             block.appendChild(strip);
             renderMiniRefStrip(strip, fg[refsKey], () => {
                 renderFlShotsPlan(editor);
@@ -880,8 +882,11 @@ function renderFlShotsPlan(editor) {
             });
             return block;
         };
-        card.appendChild(makeFrame("start", "首帧"));
-        card.appendChild(makeFrame("end", "尾帧"));
+        const frames = document.createElement("div");
+        frames.className = "h3d-fl-shot-frames";
+        frames.appendChild(makeFrame("start", "首帧"));
+        frames.appendChild(makeFrame("end", "尾帧"));
+        card.appendChild(frames);
         box.appendChild(card);
     });
 }
@@ -914,143 +919,86 @@ function isEditorFl2v(editor) {
 }
 
 const DESK_STYLES = `
-/* Main timeline (left) + studio desk (right) */
-.bd-workbench{display:flex;flex-direction:row;flex-wrap:wrap;align-items:flex-start;gap:8px;width:100%;min-height:0;flex:1 1 auto;box-sizing:border-box}
-.bd-workbench > .bd-main{flex:1 1 360px;min-width:280px;max-width:100%;min-height:0}
-.bd-workbench > .bd-studio-desk{flex:1 1 340px;min-width:280px;margin-top:0;display:flex;flex-direction:column;min-height:0;overflow:hidden;box-sizing:border-box}
-/* Side-by-side: fixed row height; both columns fill and scroll internally */
-.bd-workbench.is-side{
-  flex-wrap:nowrap;
-  align-items:stretch;
-  overflow:hidden;
-  height:var(--bd-workbench-h,640px);
-  max-height:var(--bd-workbench-h,640px);
+/* Legacy workbench helpers; shell-v2 layout lives in h3d_theme.js */
+.h3d-workbench:not(.h3d-shell-v2){display:flex;flex-direction:row;flex-wrap:wrap;align-items:flex-start;gap:8px;width:100%;min-height:0;flex:1 1 auto;box-sizing:border-box}
+.h3d-workbench:not(.h3d-shell-v2) > .h3d-main{flex:1 1 360px;min-width:280px;max-width:100%;min-height:0}
+.h3d-workbench.h3d-shell-v2.is-side > .h3d-main > .h3d-batch,
+.h3d-workbench.h3d-shell-v2.is-side > .h3d-main > .h3d-fl2v-detail-wrap{
+  flex:1 1 auto;min-height:0;overflow:hidden;display:flex;flex-direction:column;
 }
-.bd-workbench.is-side > .bd-main,
-.bd-workbench.is-side > .bd-studio-desk{
-  flex:1 1 0;
-  width:0;
-  min-width:260px;
-  height:100%;
-  max-height:100%;
-  overflow:hidden;
+.h3d-workbench.h3d-shell-v2.is-side > .h3d-main > .h3d-fl2v-detail-wrap.hidden{display:none!important}
+.h3d-workbench.h3d-shell-v2.is-side > .h3d-main .h3d-batch-list,
+.h3d-workbench.h3d-shell-v2.is-side > .h3d-main .h3d-fl2v-shots{
+  flex:1 1 auto;min-height:0;max-height:none!important;overflow-x:hidden;overflow-y:auto;overscroll-behavior:contain;
 }
-.bd-workbench.is-side > .bd-main{
-  display:flex;
-  flex-direction:column;
-  gap:6px;
+.h3d-workbench.h3d-shell-v2.is-side > .h3d-studio-desk.open .h3d-studio-desk-body{
+  flex:1 1 auto;min-height:0;max-height:none!important;overflow-x:hidden;overflow-y:auto;
 }
-.bd-workbench.is-side > .bd-main > .bd-batch,
-.bd-workbench.is-side > .bd-main > .bd-fl2v-detail-wrap{
-  flex:1 1 auto;
-  min-height:0;
-  overflow:hidden;
-  display:flex;
-  flex-direction:column;
+.h3d-studio-page{display:none;flex-direction:column;gap:12px;min-height:0;width:100%;box-sizing:border-box}
+.h3d-studio-page.active{display:flex}
+.h3d-studio-field{display:flex;flex-direction:column;gap:5px;min-width:0;flex:1 1 auto}
+.h3d-studio-field label{font-size:11px;color:var(--h3d-muted);letter-spacing:.02em}
+.h3d-studio-field textarea,.h3d-studio-field input,.h3d-studio-field select{
+  font-size:12px;background:var(--h3d-bg);color:var(--h3d-text);border:1px solid var(--h3d-border);border-radius:var(--h3d-radius-ctl);padding:8px 10px;width:100%;box-sizing:border-box;font-family:inherit
 }
-.bd-workbench.is-side > .bd-main > .bd-fl2v-detail-wrap.hidden{display:none!important}
-.bd-workbench.is-side > .bd-main .bd-batch-list,
-.bd-workbench.is-side > .bd-main .bd-fl2v-shots{
-  flex:1 1 auto;
-  min-height:0;
-  max-height:none!important;
-  overflow-x:hidden;
-  overflow-y:auto;
-  overscroll-behavior:contain;
+.h3d-studio-field textarea{min-height:72px;resize:vertical;line-height:1.45}
+.h3d-studio-grid{display:grid;gap:12px 14px;width:100%;align-items:stretch}
+.h3d-studio-grid-2{grid-template-columns:repeat(2,minmax(0,1fr))}
+.h3d-studio-grid-3{grid-template-columns:repeat(3,minmax(0,1fr))}
+.h3d-studio-grid > .h3d-studio-field{width:auto}
+.h3d-studio-grid > .h3d-studio-field textarea{min-height:120px}
+.h3d-studio-grid-tall > .h3d-studio-field textarea{min-height:148px}
+@media(max-width:820px){
+  .h3d-studio-grid-3{grid-template-columns:1fr}
+  .h3d-studio-grid-2{grid-template-columns:1fr}
 }
-.bd-workbench.is-side > .bd-studio-desk.open{
-  display:flex;
-  flex-direction:column;
-}
-.bd-workbench.is-side > .bd-studio-desk.open .bd-studio-desk-body{
-  flex:1 1 auto;
-  min-height:0;
-  max-height:none!important;
-  overflow-x:hidden;
-  overflow-y:auto;
-}
-.bd-studio-desk{margin-top:8px;border:1px solid #2a3140;border-radius:6px;background:#12151b;overflow:hidden;flex-shrink:0;max-width:100%;box-sizing:border-box}
-.bd-studio-desk-head{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:6px 10px;background:#1a1f2a;cursor:pointer;user-select:none;flex-shrink:0}
-.bd-studio-desk-head b{font-size:12px;color:#e8ecf4}
-.bd-studio-desk-head .bd-meta{font-size:11px;color:#8b93a7}
-.bd-studio-desk-body{display:none;padding:10px;gap:10px;flex-direction:column;box-sizing:border-box}
-.bd-studio-desk.open .bd-studio-desk-body{
-  display:flex;
-  flex:1 1 auto;
-  min-height:0;
-  max-height:min(48vh,280px);
-  overflow-x:hidden;
-  overflow-y:auto;
-  overscroll-behavior:contain;
-  scrollbar-gutter:stable;
-}
-.bd-studio-desk.open .bd-studio-desk-body::-webkit-scrollbar,
-.bd-workbench.is-side .bd-batch-list::-webkit-scrollbar,
-.bd-workbench.is-side .bd-fl2v-shots::-webkit-scrollbar{width:8px}
-.bd-studio-desk.open .bd-studio-desk-body::-webkit-scrollbar-thumb,
-.bd-workbench.is-side .bd-batch-list::-webkit-scrollbar-thumb,
-.bd-workbench.is-side .bd-fl2v-shots::-webkit-scrollbar-thumb{background:#3a4458;border-radius:4px}
-.bd-studio-desk.open .bd-studio-desk-body::-webkit-scrollbar-track,
-.bd-workbench.is-side .bd-batch-list::-webkit-scrollbar-track,
-.bd-workbench.is-side .bd-fl2v-shots::-webkit-scrollbar-track{background:#161a22}
-.bd-studio-tabs{display:flex;gap:4px;flex-wrap:wrap;position:sticky;top:0;z-index:3;background:#12151b;padding:0 0 8px;margin:0 0 2px;border-bottom:1px solid #1e2430}
-.bd-studio-tabs button{font-size:11px;padding:4px 10px;border-radius:4px;border:1px solid #2a3140;background:#1c2230;color:#c5cce0;cursor:pointer}
-.bd-studio-tabs button.active{background:#2b6cb0;border-color:#3b82f6;color:#fff}
-.bd-studio-tabs button.hidden{display:none!important}
-.bd-studio-page{display:none;flex-direction:column;gap:8px;min-height:0}
-.bd-studio-page.active{display:flex}
-.bd-studio-field{display:flex;flex-direction:column;gap:3px}
-.bd-studio-field label{font-size:11px;color:#9aa3b5}
-.bd-studio-field textarea,.bd-studio-field input,.bd-studio-field select{
-  font-size:12px;background:#0e1117;color:#e8ecf4;border:1px solid #2a3140;border-radius:4px;padding:6px 8px;width:100%;box-sizing:border-box
-}
-.bd-studio-field textarea{min-height:56px;resize:vertical}
-.bd-studio-row{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
-.bd-studio-row label{font-size:11px;color:#b8c0d0;display:flex;gap:4px;align-items:center}
-.bd-studio-status{font-size:11px;color:#9aa3b5;min-height:16px}
-.bd-studio-status.err{color:#f87171}
-.bd-studio-status.ok{color:#4ade80}
-.bd-seg-retake.run-on{outline:1px solid #f59e0b}
-.bd-guide-refs{display:flex;flex-wrap:wrap;gap:8px;margin:6px 0}
-.bd-guide-card{width:118px;border:1px solid #2a3140;border-radius:6px;background:#0e1117;padding:6px;display:flex;flex-direction:column;gap:4px}
-.bd-guide-thumb{width:100%;aspect-ratio:1;border:1px dashed #444;border-radius:4px;background:#111;display:flex;align-items:center;justify-content:center;cursor:pointer;overflow:hidden;font-size:10px;color:#777;position:relative}
-.bd-guide-thumb img{width:100%;height:100%;object-fit:cover}
-.bd-guide-thumb .x{position:absolute;top:2px;right:4px;color:#f88;font-size:12px;cursor:pointer}
-.bd-guide-card select,.bd-guide-card input{font-size:10px;background:#12151b;color:#e8ecf4;border:1px solid #2a3140;border-radius:3px;padding:3px 4px;width:100%;box-sizing:border-box}
-.bd-guide-actions{display:flex;gap:4px}
-.bd-guide-actions .bd-btn{flex:1;padding:2px 4px;font-size:10px}
-.bd-guide-del{color:#f88!important;border-color:#533!important}
-.bd-idir-targets{display:flex;flex-wrap:wrap;gap:8px 12px;margin:4px 0 6px}
-.bd-idir-targets label{font-size:12px;color:#c8cfdb;display:inline-flex;align-items:center;gap:4px;margin:0}
-.bd-idir-group-plan{display:flex;flex-direction:column;gap:8px;margin:4px 0 8px;max-height:280px;overflow-y:auto;padding:6px;border:1px dashed #2a3140;border-radius:6px}
-.bd-idir-group-card{border:1px solid #1e2430;border-radius:6px;padding:6px 8px;background:#0e1117}
-.bd-idir-group-row{display:flex;flex-wrap:wrap;align-items:center;gap:8px;padding:2px 0}
-.bd-idir-group-row:last-child{border-bottom:none}
-.bd-idir-group-name{min-width:64px;font-size:12px;color:#e8ecf4;font-weight:600}
-.bd-idir-group-row .bd-idir-targets{margin:0}
-.bd-fl-mini-ref.with-role{height:auto;min-height:64px;flex-direction:column;gap:2px;padding-bottom:2px}
-.bd-fl-mini-role{width:100%;font-size:9px;background:#12151b;color:#e8ecf4;border:1px solid #2a3140;border-radius:2px;padding:1px 2px;box-sizing:border-box}
-.bd-fl-shot-card{border:1px solid #2a3140;border-radius:6px;padding:8px;margin:6px 0;background:#0e1117}
-.bd-fl-shot-card b{font-size:12px;color:#e8ecf4}
-.bd-fl-frame-block{margin-top:8px;padding-top:6px;border-top:1px dashed #2a3140}
-.bd-fl-frame-block .bd-studio-field{margin-top:4px}
-.bd-fl-mini-refs{display:flex;flex-wrap:wrap;gap:6px;margin:4px 0}
-.bd-fl-mini-ref{width:64px;height:64px;border:1px dashed #444;border-radius:4px;background:#111;position:relative;overflow:hidden;cursor:pointer;display:flex;align-items:center;justify-content:center;font-size:9px;color:#777}
-.bd-fl-mini-ref img{width:100%;height:100%;object-fit:cover}
-.bd-fl-mini-ref .x{position:absolute;top:0;right:2px;color:#f88;font-size:11px;z-index:2}
-.bd-fl-block.hidden,.bd-i2v-block.hidden,[data-r="ld-local-panel"].hidden,[data-r="ld-cloud-panel"].hidden,[data-r="idir-cloud-gen-panel"].hidden,[data-r="idir-local-gen-only"].hidden{display:none!important}
+.h3d-studio-row{display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end}
+.h3d-studio-row label{font-size:11px;color:var(--h3d-text);display:flex;gap:4px;align-items:center}
+.h3d-studio-status{font-size:11px;color:var(--h3d-muted);min-height:16px}
+.h3d-studio-status.err{color:var(--h3d-danger)}
+.h3d-studio-status.ok{color:var(--h3d-secondary)}
+.h3d-seg-retake.run-on{outline:1px solid var(--h3d-accent)}
+.h3d-guide-refs{display:flex;flex-wrap:wrap;gap:8px;margin:6px 0}
+.h3d-guide-card{width:118px;border:1px solid var(--h3d-border);border-radius:var(--h3d-radius-panel);background:var(--h3d-bg);padding:6px;display:flex;flex-direction:column;gap:4px}
+.h3d-guide-thumb{width:100%;aspect-ratio:1;border:1px dashed var(--h3d-border);border-radius:var(--h3d-radius-ctl);background:var(--h3d-surface);display:flex;align-items:center;justify-content:center;cursor:pointer;overflow:hidden;font-size:10px;color:var(--h3d-muted);position:relative}
+.h3d-guide-thumb img{width:100%;height:100%;object-fit:cover}
+.h3d-guide-thumb .x{position:absolute;top:2px;right:4px;color:var(--h3d-danger);font-size:12px;cursor:pointer}
+.h3d-guide-card select,.h3d-guide-card input{font-size:10px;background:var(--h3d-surface);color:var(--h3d-text);border:1px solid var(--h3d-border);border-radius:var(--h3d-radius-ctl);padding:3px 4px;width:100%;box-sizing:border-box}
+.h3d-guide-actions{display:flex;gap:4px}
+.h3d-guide-actions .h3d-btn{flex:1;padding:2px 4px;font-size:10px}
+.h3d-guide-del{color:var(--h3d-danger)!important;border-color:#533!important}
+.h3d-idir-targets{display:flex;flex-wrap:wrap;gap:8px 12px;margin:4px 0 6px}
+.h3d-idir-targets label{font-size:12px;color:var(--h3d-text);display:inline-flex;align-items:center;gap:4px;margin:0}
+.h3d-idir-group-plan{display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:10px;margin:4px 0 8px;max-height:min(42vh,360px);overflow-y:auto;padding:8px;border:1px dashed var(--h3d-border);border-radius:var(--h3d-radius-panel)}
+.h3d-idir-group-card{border:1px solid var(--h3d-border);border-radius:var(--h3d-radius-panel);padding:10px;background:var(--h3d-bg);min-width:0}
+.h3d-idir-group-row{display:flex;flex-wrap:wrap;align-items:center;gap:8px;padding:2px 0}
+.h3d-idir-group-row:last-child{border-bottom:none}
+.h3d-idir-group-name{min-width:64px;font-size:12px;color:var(--h3d-text);font-weight:600}
+.h3d-idir-group-row .h3d-idir-targets{margin:0}
+.h3d-fl-mini-ref.with-role{height:auto;min-height:64px;flex-direction:column;gap:2px;padding-bottom:2px}
+.h3d-fl-mini-role{width:100%;font-size:9px;background:var(--h3d-surface);color:var(--h3d-text);border:1px solid var(--h3d-border);border-radius:var(--h3d-radius-ctl);padding:1px 2px;box-sizing:border-box}
+.h3d-fl-shot-card{border:1px solid var(--h3d-border);border-radius:var(--h3d-radius-panel);padding:12px;margin:8px 0;background:var(--h3d-bg)}
+.h3d-fl-shot-card b{font-size:12px;color:var(--h3d-text)}
+.h3d-fl-shot-frames{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px;margin-top:8px}
+@media(max-width:720px){.h3d-fl-shot-frames{grid-template-columns:1fr}}
+.h3d-fl-frame-block{margin-top:0;padding:8px;border:1px dashed var(--h3d-border);border-radius:var(--h3d-radius-ctl);background:rgba(0,0,0,.12)}
+.h3d-fl-frame-block .h3d-studio-field{margin-top:4px}
+.h3d-fl-frame-block textarea{min-height:88px!important}
+.h3d-fl-mini-refs{display:flex;flex-wrap:wrap;gap:6px;margin:4px 0}
+.h3d-fl-mini-ref{width:64px;height:64px;border:1px dashed var(--h3d-border);border-radius:var(--h3d-radius-ctl);background:var(--h3d-surface);position:relative;overflow:hidden;cursor:pointer;display:flex;align-items:center;justify-content:center;font-size:9px;color:var(--h3d-muted)}
+.h3d-fl-mini-ref img{width:100%;height:100%;object-fit:cover}
+.h3d-fl-mini-ref .x{position:absolute;top:0;right:2px;color:var(--h3d-danger);font-size:11px;z-index:2}
+.h3d-fl-block.hidden,.h3d-i2v-block.hidden,[data-r="ld-local-panel"].hidden,[data-r="ld-cloud-panel"].hidden,[data-r="idir-cloud-gen-panel"].hidden,[data-r="idir-local-gen-only"].hidden{display:none!important}
 [data-r="fl-shots-plan"]{max-height:min(42vh,420px);overflow-y:auto;overscroll-behavior:contain;scrollbar-gutter:stable;padding-right:2px}
-[data-r="fl-shots-plan"]::-webkit-scrollbar{width:8px}
-[data-r="fl-shots-plan"]::-webkit-scrollbar-thumb{background:#3a4458;border-radius:4px}
-[data-r="fl-shots-plan"]::-webkit-scrollbar-track{background:#161a22}
 `;
 
 function ensureDeskStyles() {
+    ensureH3dTheme();
     const css = DESK_STYLES;
-    let style = document.getElementById("minimax-studio-desk-styles");
+    let style = document.getElementById("h3d-studio-desk-styles");
     if (!style) {
         style = document.createElement("style");
-        style.id = "minimax-studio-desk-styles";
+        style.id = "h3d-studio-desk-styles";
         document.head.appendChild(style);
     }
     style.textContent = css;
@@ -1149,7 +1097,7 @@ function setStatus(el, text, kind = "") {
 }
 
 /**
- * Mount studio desk into an official MiniMaxH3DirectorEditor instance.
+ * Mount studio desk into the H3 director editor instance.
  */
 export function mountStudioDesk(editor) {
     if (!editor?.root || editor._studioDeskMounted) return;
@@ -1158,11 +1106,11 @@ export function mountStudioDesk(editor) {
     ensureTimelineStudio(editor.timeline);
 
     // Toolbar extras
-    const actions = editor.root.querySelector(".bd-actions");
+    const actions = editor.root.querySelector(".h3d-actions");
     if (actions && !actions.querySelector('[data-a="run-retake-only"]')) {
         const btnRetake = document.createElement("button");
         btnRetake.type = "button";
-        btnRetake.className = "bd-btn";
+        btnRetake.className = "h3d-btn";
         btnRetake.dataset.a = "run-retake-only";
         btnRetake.title = "只运行标记了 Retake 的片段（开启选择运行）";
         btnRetake.textContent = "仅 Retake";
@@ -1171,7 +1119,7 @@ export function mountStudioDesk(editor) {
         else actions.appendChild(btnRetake);
 
         const scope = document.createElement("select");
-        scope.className = "bd-select";
+        scope.className = "h3d-select";
         scope.dataset.r = "run-scope";
         scope.title = "运行范围：全部 / 勾选段 / 仅 Retake";
         scope.innerHTML = `
@@ -1186,26 +1134,26 @@ export function mountStudioDesk(editor) {
     const segPanel = editor.segmentPanel || editor.root.querySelector('[data-r="segment-panel"]');
     if (segPanel && !segPanel.querySelector('[data-r="seg-studio-row"]')) {
         const row = document.createElement("div");
-        row.className = "bd-studio-row";
+        row.className = "h3d-studio-row";
         row.dataset.r = "seg-studio-row";
         row.style.cssText = "margin-top:8px;padding-top:8px;border-top:1px solid #2a3140";
         row.innerHTML = `
-            <div class="bd-studio-field" style="flex:1;min-width:100px">
+            <div class="h3d-studio-field" style="flex:1;min-width:100px">
               <label>标签</label>
               <input type="text" data-r="seg-label-input" placeholder="开场 / 高潮…">
             </div>
-            <div class="bd-studio-field" style="flex:1;min-width:120px">
+            <div class="h3d-studio-field" style="flex:1;min-width:120px">
               <label>运镜预设</label>
               <select data-r="seg-camera">${CAMERA_PRESETS.map((c) => `<option value="${c}">${c}</option>`).join("")}
                 <option value="__custom__">自定义…</option>
               </select>
             </div>
-            <div class="bd-studio-field" style="flex:1;min-width:100px">
+            <div class="h3d-studio-field" style="flex:1;min-width:100px">
               <label>转场</label>
               <select data-r="seg-transition">${TRANSITIONS.map((t) => `<option value="${t}">${t}</option>`).join("")}</select>
             </div>
             <label><input type="checkbox" data-r="seg-retake">需重拍 Retake</label>
-            <div class="bd-studio-field" style="flex:2;min-width:140px">
+            <div class="h3d-studio-field" style="flex:2;min-width:140px">
               <label>重拍备注</label>
               <input type="text" data-r="seg-retake-note" placeholder="可选">
             </div>`;
@@ -1219,49 +1167,55 @@ export function mountStudioDesk(editor) {
 
     // Desk panel under main body
     const desk = document.createElement("div");
-    desk.className = "bd-studio-desk open";
+    desk.className = "h3d-studio-desk open";
     desk.innerHTML = `
-      <div class="bd-studio-desk-head" data-r="desk-toggle">
-        <b data-r="desk-title">导演台 · 连续性 / 声景 / 提示词导演</b>
-        <span class="bd-meta">点击折叠</span>
+      <nav class="h3d-desk-nav" data-r="desk-tabs" aria-label="导演工台分区">
+        <div class="h3d-desk-brand">工台</div>
+        <button type="button" class="active" data-tab="continuity" title="连续性">连续</button>
+        <button type="button" data-tab="global" title="全局声景">声景</button>
+        <button type="button" data-tab="director" title="提示词导演">提示词</button>
+        <button type="button" data-tab="imagedir" title="参考图导演">参考图</button>
+        <button type="button" data-tab="export" title="分镜导出">导出</button>
+      </nav>
+      <div class="h3d-desk-main">
+      <div class="h3d-studio-desk-head" data-r="desk-toggle">
+        <b data-r="desk-title">H3 导演工台 · 连续性 / 声景 / 提示词</b>
+        <span class="h3d-meta">点击折叠</span>
       </div>
-      <div class="bd-studio-desk-body">
-        <div class="bd-studio-tabs" data-r="desk-tabs">
-          <button type="button" class="active" data-tab="continuity">连续性</button>
-          <button type="button" data-tab="global">全局声景</button>
-          <button type="button" data-tab="director">提示词导演</button>
-          <button type="button" data-tab="imagedir">参考图导演</button>
-          <button type="button" data-tab="export">分镜导出</button>
+      <div class="h3d-studio-desk-body">
+        <div class="h3d-studio-page active" data-page="continuity">
+          <label class="h3d-studio-row"><input type="checkbox" data-r="cont-inject" checked>运行时注入到提示词</label>
+          <div class="h3d-studio-grid h3d-studio-grid-3 h3d-studio-grid-tall">
+            <div class="h3d-studio-field"><label>角色设定</label><textarea data-r="cont-characters" placeholder="女舰长：短发，深色制服…"></textarea></div>
+            <div class="h3d-studio-field"><label>场景设定</label><textarea data-r="cont-locations" placeholder="旗舰舰桥，巨大观察窗"></textarea></div>
+            <div class="h3d-studio-field"><label>道具设定</label><textarea data-r="cont-props" placeholder="舰队、跃迁引擎光"></textarea></div>
+          </div>
         </div>
-        <div class="bd-studio-page active" data-page="continuity">
-          <label class="bd-studio-row"><input type="checkbox" data-r="cont-inject" checked>运行时注入到提示词</label>
-          <div class="bd-studio-field"><label>角色设定</label><textarea data-r="cont-characters" placeholder="女舰长：短发，深色制服…"></textarea></div>
-          <div class="bd-studio-field"><label>场景设定</label><textarea data-r="cont-locations" placeholder="旗舰舰桥，巨大观察窗"></textarea></div>
-          <div class="bd-studio-field"><label>道具设定</label><textarea data-r="cont-props" placeholder="舰队、跃迁引擎光"></textarea></div>
+        <div class="h3d-studio-page" data-page="global">
+          <div class="h3d-studio-grid h3d-studio-grid-3 h3d-studio-grid-tall">
+            <div class="h3d-studio-field"><label>整体风格</label><textarea data-r="desk-style"></textarea></div>
+            <div class="h3d-studio-field"><label>整体声景</label><textarea data-r="desk-soundscape"></textarea></div>
+            <div class="h3d-studio-field"><label>非叙事配乐</label><textarea data-r="desk-music"></textarea></div>
+          </div>
         </div>
-        <div class="bd-studio-page" data-page="global">
-          <div class="bd-studio-field"><label>整体风格</label><textarea data-r="desk-style"></textarea></div>
-          <div class="bd-studio-field"><label>整体声景</label><textarea data-r="desk-soundscape"></textarea></div>
-          <div class="bd-studio-field"><label>非叙事配乐</label><textarea data-r="desk-music"></textarea></div>
-        </div>
-        <div class="bd-studio-page" data-page="imagedir">
-          <label class="bd-studio-row"><input type="checkbox" data-r="idir-enable"><span data-r="idir-enable-label">启用参考图导演</span></label>
-          <label class="bd-studio-row"><input type="checkbox" data-r="idir-auto-inject" checked><span data-r="idir-inject-label">自动注入到时间线</span></label>
+        <div class="h3d-studio-page" data-page="imagedir">
+          <label class="h3d-studio-row"><input type="checkbox" data-r="idir-enable"><span data-r="idir-enable-label">启用参考图导演</span></label>
+          <label class="h3d-studio-row"><input type="checkbox" data-r="idir-auto-inject" checked><span data-r="idir-inject-label">自动注入到时间线</span></label>
 
           <div style="border-top:1px solid #2a3140;padding-top:8px;margin-top:4px">
-            <div class="bd-studio-row">
-              <div class="bd-studio-field" style="width:160px"><label>生图后端</label>
+            <div class="h3d-studio-row">
+              <div class="h3d-studio-field" style="width:160px"><label>生图后端</label>
                 <select data-r="idir-gen-backend" title="本地：可切换 SDXL / FLUX / Z-Image-Turbo（接线方式不同）。云端：智谱等 API。">
                   <option value="local">本地模型（可切换）</option>
                   <option value="cloud">云端 API（更强/推荐）</option>
                 </select>
               </div>
-              <div class="bd-meta" data-r="idir-gen-backend-hint" style="flex:1;font-size:11px;color:#8b93a7;align-self:center">
+              <div class="h3d-meta" data-r="idir-gen-backend-hint" style="flex:1;font-size:11px;color:#8b93a7;align-self:center">
                 换模型：选下方「本地模型族」并按接线说明接 ref_gen_*。
               </div>
             </div>
-            <div class="bd-studio-row" data-r="idir-local-gen-only">
-              <div class="bd-studio-field" style="width:200px"><label>本地模型族</label>
+            <div class="h3d-studio-row" data-r="idir-local-gen-only">
+              <div class="h3d-studio-field" style="width:200px"><label>本地模型族</label>
                 <select data-r="idir-local-profile" title="切换文生图模型族：自动套用推荐采样，并显示接线说明">
                   <option value="auto">自动检测</option>
                   <option value="sdxl">SDXL / SD1.5</option>
@@ -1269,79 +1223,81 @@ export function mountStudioDesk(editor) {
                   <option value="z_image_turbo">Z-Image-Turbo BF16</option>
                 </select>
               </div>
-              <div class="bd-meta" data-r="idir-local-profile-hint" style="flex:1;font-size:11px;color:#8b93a7;align-self:center;line-height:1.35">
+              <div class="h3d-meta" data-r="idir-local-profile-hint" style="flex:1;font-size:11px;color:#8b93a7;align-self:center;line-height:1.35">
                 按已连接 MODEL 自动匹配采样。
               </div>
             </div>
             <div data-r="idir-cloud-gen-panel" class="hidden">
-              <div class="bd-studio-row">
-                <div class="bd-studio-field" style="flex:1;min-width:120px"><label>API 格式</label>
+              <div class="h3d-studio-row">
+                <div class="h3d-studio-field" style="flex:1;min-width:120px"><label>API 格式</label>
                   <select data-r="idir-gen-api-format">
                     <option value="智谱 GLM">智谱 GLM</option>
                     <option value="OpenAI Compatible">OpenAI Compatible</option>
                   </select>
                 </div>
-                <div class="bd-studio-field" style="flex:2"><label>API URL</label>
+                <div class="h3d-studio-field" style="flex:2"><label>API URL</label>
                   <input type="text" data-r="idir-gen-api-url" placeholder="https://open.bigmodel.cn/api/paas/v4">
                 </div>
               </div>
-              <div class="bd-studio-row">
-                <div class="bd-studio-field" style="flex:1.5"><label>生图模型</label>
+              <div class="h3d-studio-row">
+                <div class="h3d-studio-field" style="flex:1.5"><label>生图模型</label>
                   <input type="text" data-r="idir-gen-api-model" placeholder="cogview-3-flash / dall-e-3">
                 </div>
-                <div class="bd-studio-field" style="flex:1.5"><label>API Key</label>
+                <div class="h3d-studio-field" style="flex:1.5"><label>API Key</label>
                   <input type="password" data-r="idir-gen-api-key" placeholder="智谱/OpenAI Key" autocomplete="off">
                 </div>
               </div>
             </div>
           </div>
 
-          <div class="bd-studio-field"><label>统一外貌备注</label><textarea data-r="idir-unified" placeholder="统一角色外貌、服装与画风…"></textarea></div>
-          <div class="bd-studio-field"><label>静帧风格后缀</label><textarea data-r="idir-suffix" placeholder="电影静帧，高细节…"></textarea></div>
+          <div class="h3d-studio-grid h3d-studio-grid-2">
+            <div class="h3d-studio-field"><label>统一外貌备注</label><textarea data-r="idir-unified" placeholder="统一角色外貌、服装与画风…"></textarea></div>
+            <div class="h3d-studio-field"><label>静帧风格后缀</label><textarea data-r="idir-suffix" placeholder="电影静帧，高细节…"></textarea></div>
+          </div>
 
-          <div class="bd-i2v-block" data-r="idir-i2v-block">
+          <div class="h3d-i2v-block" data-r="idir-i2v-block">
             <div style="border-top:1px solid #2a3140;padding-top:8px;margin-top:4px">
               <b style="font-size:12px;color:#e8ecf4">② 生成内容（全局 / 各分镜独立勾选）</b>
-              <div class="bd-meta" style="font-size:11px;color:#8b93a7;margin:4px 0 6px;line-height:1.4">
+              <div class="h3d-meta" style="font-size:11px;color:#8b93a7;margin:4px 0 6px;line-height:1.4">
                 全局与每个提示词组可分别勾选人物、场景、道具、静帧；每组还可上传独立参考图。生图时：本组参考 → 全局参考。
               </div>
               <div data-r="idir-gen-plan"></div>
             </div>
             <div style="border-top:1px solid #2a3140;padding-top:8px;margin-top:4px">
-              <div class="bd-studio-row" style="justify-content:space-between;flex-wrap:wrap;gap:4px">
+              <div class="h3d-studio-row" style="justify-content:space-between;flex-wrap:wrap;gap:4px">
                 <b style="font-size:12px;color:#e8ecf4">全局参考图（给参考图导演 · 用户底图）</b>
-                <span class="bd-studio-row" style="gap:4px;flex-wrap:wrap">
-                  <button type="button" class="bd-btn" data-a="idir-add-char">+ 人物</button>
-                  <button type="button" class="bd-btn" data-a="idir-add-scene">+ 场景</button>
-                  <button type="button" class="bd-btn" data-a="idir-add-prop">+ 道具</button>
-                  <button type="button" class="bd-btn" data-a="idir-add-guide">+ 其他</button>
-                  <button type="button" class="bd-btn bd-guide-del" data-a="idir-clear-guides">清空</button>
+                <span class="h3d-studio-row" style="gap:4px;flex-wrap:wrap">
+                  <button type="button" class="h3d-btn" data-a="idir-add-char">+ 人物</button>
+                  <button type="button" class="h3d-btn" data-a="idir-add-scene">+ 场景</button>
+                  <button type="button" class="h3d-btn" data-a="idir-add-prop">+ 道具</button>
+                  <button type="button" class="h3d-btn" data-a="idir-add-guide">+ 其他</button>
+                  <button type="button" class="h3d-btn h3d-guide-del" data-a="idir-clear-guides">清空</button>
                 </span>
               </div>
-              <div class="bd-meta" style="font-size:11px;color:#8b93a7;margin-bottom:4px">
+              <div class="h3d-meta" style="font-size:11px;color:#8b93a7;margin-bottom:4px">
                 仅作导演生图的图生图底图（Denoise&lt;1）。生成结果会进时间线「图片1–9」与下方预览，<b>不会</b>回写到此槽。
               </div>
-              <div class="bd-guide-refs" data-r="idir-guide-refs"></div>
+              <div class="h3d-guide-refs" data-r="idir-guide-refs"></div>
             </div>
           </div>
 
-          <div class="bd-fl-block hidden" data-r="idir-fl-block">
+          <div class="h3d-fl-block hidden" data-r="idir-fl-block">
             <div style="border-top:1px solid #2a3140;padding-top:8px;margin-top:4px">
-              <div class="bd-studio-row" style="justify-content:space-between;flex-wrap:wrap;gap:4px">
+              <div class="h3d-studio-row" style="justify-content:space-between;flex-wrap:wrap;gap:4px">
                 <b style="font-size:12px;color:#e8ecf4">全局参考图（给首尾帧导演）</b>
-                <span class="bd-studio-row" style="gap:4px">
-                  <button type="button" class="bd-btn" data-a="fl-add-global-ref">+ 添加</button>
-                  <button type="button" class="bd-btn bd-guide-del" data-a="fl-clear-global-refs">清空</button>
+                <span class="h3d-studio-row" style="gap:4px">
+                  <button type="button" class="h3d-btn" data-a="fl-add-global-ref">+ 添加</button>
+                  <button type="button" class="h3d-btn h3d-guide-del" data-a="fl-clear-global-refs">清空</button>
                 </span>
               </div>
-              <div class="bd-meta" style="font-size:11px;color:#8b93a7;margin:4px 0">
+              <div class="h3d-meta" style="font-size:11px;color:#8b93a7;margin:4px 0">
                 所有组生首/尾帧时可用；图生图优先用本组独立参考，其次用全局参考。
               </div>
-              <div class="bd-fl-mini-refs" data-r="fl-global-refs"></div>
+              <div class="h3d-fl-mini-refs" data-r="fl-global-refs"></div>
             </div>
             <div style="border-top:1px solid #2a3140;padding-top:8px;margin-top:4px">
               <b style="font-size:12px;color:#e8ecf4">各组首尾帧（提示词 + 独立参考）</b>
-              <div class="bd-meta" style="font-size:11px;color:#8b93a7;margin:4px 0 6px;line-height:1.4">
+              <div class="h3d-meta" style="font-size:11px;color:#8b93a7;margin:4px 0 6px;line-height:1.4">
                 每组可勾选生成首帧/尾帧，编辑提示词，并上传该帧自己的参考图。
               </div>
               <div data-r="fl-shots-plan"></div>
@@ -1349,138 +1305,144 @@ export function mountStudioDesk(editor) {
           </div>
 
           <div style="border-top:1px solid #2a3140;padding-top:8px;margin-top:4px" data-r="idir-gen-params">
-            <div class="bd-studio-row" style="justify-content:space-between">
+            <div class="h3d-studio-row" style="justify-content:space-between">
               <b style="font-size:12px;color:#e8ecf4" data-r="idir-gen-params-title">文生图参数</b>
-              <span class="bd-studio-row" style="gap:4px" data-r="idir-local-gen-only">
-                <button type="button" class="bd-btn" data-a="idir-preset-zimage" title="Z-Image-Turbo BF16 推荐">Z-Image</button>
-                <button type="button" class="bd-btn" data-a="idir-preset-flux" title="FLUX 推荐">FLUX</button>
-                <button type="button" class="bd-btn" data-a="idir-preset-turbo" title="DreamShaperXL Turbo 等">SDXL Turbo</button>
-                <button type="button" class="bd-btn" data-a="idir-preset-quality" title="常规 SDXL 质量档">SDXL 质量</button>
+              <span class="h3d-studio-row" style="gap:4px" data-r="idir-local-gen-only">
+                <button type="button" class="h3d-btn" data-a="idir-preset-zimage" title="Z-Image-Turbo BF16 推荐">Z-Image</button>
+                <button type="button" class="h3d-btn" data-a="idir-preset-flux" title="FLUX 推荐">FLUX</button>
+                <button type="button" class="h3d-btn" data-a="idir-preset-turbo" title="DreamShaperXL Turbo 等">SDXL Turbo</button>
+                <button type="button" class="h3d-btn" data-a="idir-preset-quality" title="常规 SDXL 质量档">SDXL 质量</button>
               </span>
             </div>
-            <label class="bd-studio-row" data-r="idir-local-gen-only"><input type="checkbox" data-r="idir-use-video-size">使用视频宽高（默认用下方独立分辨率，更适合 SDXL）</label>
-            <div class="bd-studio-row">
-              <div class="bd-studio-field" style="width:90px"><label>宽</label><input type="number" data-r="idir-width" min="256" max="2048" step="64" value="1024"></div>
-              <div class="bd-studio-field" style="width:90px"><label>高</label><input type="number" data-r="idir-height" min="256" max="2048" step="64" value="576"></div>
-              <div class="bd-studio-field" style="width:80px" data-r="idir-local-gen-only"><label>Steps</label><input type="number" data-r="idir-steps" min="1" max="100" step="1" value="8"></div>
-              <div class="bd-studio-field" style="width:80px" data-r="idir-local-gen-only"><label>CFG</label><input type="number" data-r="idir-cfg" min="0" max="30" step="0.1" value="2"></div>
-              <div class="bd-studio-field" style="width:80px" data-r="idir-local-gen-only"><label>Denoise</label><input type="number" data-r="idir-denoise" min="0" max="1" step="0.05" value="1"></div>
-              <div class="bd-studio-field" style="width:100px" data-r="idir-local-gen-only"><label>Seed(-1=主种子)</label><input type="number" data-r="idir-seed" step="1" value="-1"></div>
+            <label class="h3d-studio-row" data-r="idir-local-gen-only"><input type="checkbox" data-r="idir-use-video-size">使用视频宽高（默认用下方独立分辨率，更适合 SDXL）</label>
+            <div class="h3d-studio-row">
+              <div class="h3d-studio-field" style="width:90px"><label>宽</label><input type="number" data-r="idir-width" min="256" max="2048" step="64" value="1024"></div>
+              <div class="h3d-studio-field" style="width:90px"><label>高</label><input type="number" data-r="idir-height" min="256" max="2048" step="64" value="576"></div>
+              <div class="h3d-studio-field" style="width:80px" data-r="idir-local-gen-only"><label>Steps</label><input type="number" data-r="idir-steps" min="1" max="100" step="1" value="8"></div>
+              <div class="h3d-studio-field" style="width:80px" data-r="idir-local-gen-only"><label>CFG</label><input type="number" data-r="idir-cfg" min="0" max="30" step="0.1" value="2"></div>
+              <div class="h3d-studio-field" style="width:80px" data-r="idir-local-gen-only"><label>Denoise</label><input type="number" data-r="idir-denoise" min="0" max="1" step="0.05" value="1"></div>
+              <div class="h3d-studio-field" style="width:100px" data-r="idir-local-gen-only"><label>Seed(-1=主种子)</label><input type="number" data-r="idir-seed" step="1" value="-1"></div>
             </div>
-            <div class="bd-studio-row" data-r="idir-local-gen-only">
-              <div class="bd-studio-field" style="flex:1;min-width:140px"><label>Sampler</label>
+            <div class="h3d-studio-row" data-r="idir-local-gen-only">
+              <div class="h3d-studio-field" style="flex:1;min-width:140px"><label>Sampler</label>
                 <select data-r="idir-sampler">${REF_SAMPLERS.map((s) => `<option value="${s}">${s}</option>`).join("")}</select>
               </div>
-              <div class="bd-studio-field" style="flex:1;min-width:140px"><label>Scheduler</label>
+              <div class="h3d-studio-field" style="flex:1;min-width:140px"><label>Scheduler</label>
                 <select data-r="idir-scheduler">${REF_SCHEDULERS.map((s) => `<option value="${s}">${s}</option>`).join("")}</select>
               </div>
             </div>
-            <div class="bd-studio-field" data-r="idir-local-gen-only"><label>反向提示词 Negative</label>
+            <div class="h3d-studio-field" data-r="idir-local-gen-only"><label>反向提示词 Negative</label>
               <textarea data-r="idir-negative" style="min-height:52px;font-size:11px"></textarea>
             </div>
           </div>
 
-          <div class="bd-studio-row">
-            <button type="button" class="bd-btn bd-btn-primary" data-a="idir-build" data-r="idir-build-label">① 生成生图提示词</button>
-            <button type="button" class="bd-btn" data-a="idir-copy-global">复制全局提示词</button>
+          <div class="h3d-studio-row">
+            <button type="button" class="h3d-btn h3d-btn-primary" data-a="idir-build" data-r="idir-build-label">① 生成生图提示词</button>
+            <button type="button" class="h3d-btn" data-a="idir-copy-global">复制全局提示词</button>
           </div>
           <div data-r="idir-prompt-draft" style="border:1px solid #3a4558;border-radius:8px;padding:8px;margin:6px 0;background:#1a1f2a">
-            <div class="bd-studio-row" style="justify-content:space-between;flex-wrap:wrap;gap:4px;margin-bottom:4px">
+            <div class="h3d-studio-row" style="justify-content:space-between;flex-wrap:wrap;gap:4px;margin-bottom:4px">
               <b style="font-size:12px;color:#e8ecf4">生图提示词 · 预览 / 调试</b>
-              <span class="bd-studio-row" style="gap:4px">
-                <button type="button" class="bd-btn bd-btn-primary" data-a="idir-apply-draft" title="把下方草稿写入正式生图提示词槽">应用到生图槽</button>
-                <button type="button" class="bd-btn" data-a="idir-clear-draft" title="清空草稿预览">清空草稿</button>
+              <span class="h3d-studio-row" style="gap:4px">
+                <button type="button" class="h3d-btn h3d-btn-primary" data-a="idir-apply-draft" title="把下方草稿写入正式生图提示词槽">应用到生图槽</button>
+                <button type="button" class="h3d-btn" data-a="idir-clear-draft" title="清空草稿预览">清空草稿</button>
               </span>
             </div>
-            <div class="bd-meta" style="font-size:11px;color:#8b93a7;margin-bottom:6px;line-height:1.4">
+            <div class="h3d-meta" style="font-size:11px;color:#8b93a7;margin-bottom:6px;line-height:1.4">
               提示词导演 / ① 生成的结果先落在这里，可改词调试；确认后再点「应用到生图槽」。② 仅生参考图使用下方正式槽。
             </div>
-            <div class="bd-studio-field"><label>草稿 · 全局参考图提示词</label>
-              <textarea data-r="idir-draft-global" style="min-height:64px;font-size:11px" placeholder="① 或「人物/场景→参考图导演」后在此预览"></textarea>
+            <div class="h3d-studio-grid h3d-studio-grid-2">
+              <div class="h3d-studio-field"><label>草稿 · 全局参考图提示词</label>
+                <textarea data-r="idir-draft-global" style="min-height:96px;font-size:11px" placeholder="① 或「人物/场景→参考图导演」后在此预览"></textarea>
+              </div>
+              <div class="h3d-studio-field"><label>草稿 · 各组生图提示词</label>
+                <textarea data-r="idir-draft-shots" style="min-height:96px;font-size:11px" placeholder="每组一段【生图-…】"></textarea>
+              </div>
             </div>
-            <div class="bd-studio-field"><label>草稿 · 各组生图提示词</label>
-              <textarea data-r="idir-draft-shots" style="min-height:88px;font-size:11px" placeholder="每组一段【生图-…】"></textarea>
+          </div>
+          <div class="h3d-studio-grid h3d-studio-grid-2">
+            <div class="h3d-studio-field" data-r="idir-global-prompt-wrap"><label data-r="idir-global-prompt-label">正式 · 全局参考图提示词（②生图用）</label>
+              <textarea data-r="idir-global-prompt" style="min-height:110px" placeholder="从上方草稿「应用到生图槽」，或手动编辑"></textarea>
+            </div>
+            <div class="h3d-studio-field" data-r="idir-shot-prompts-wrap"><label data-r="idir-shot-prompts-label">正式 · 各组生图提示词（②生图用）</label>
+              <textarea data-r="idir-shot-prompts" style="min-height:110px;font-size:11px" placeholder="每组一段【生图-…】"></textarea>
             </div>
           </div>
-          <div class="bd-studio-field" data-r="idir-global-prompt-wrap"><label data-r="idir-global-prompt-label">正式 · 全局参考图提示词（②生图用）</label>
-            <textarea data-r="idir-global-prompt" style="min-height:72px" placeholder="从上方草稿「应用到生图槽」，或手动编辑"></textarea>
+          <div class="h3d-studio-row" style="margin-top:6px">
+            <button type="button" class="h3d-btn h3d-btn-primary" data-a="idir-queue-stills" data-r="idir-queue-label">② 仅生参考图并预览</button>
+            <button type="button" class="h3d-btn" data-a="idir-ready-video" data-r="idir-ready-label">③ 确认图 → 准备出片</button>
           </div>
-          <div class="bd-studio-field" data-r="idir-shot-prompts-wrap"><label data-r="idir-shot-prompts-label">正式 · 各组生图提示词（②生图用）</label>
-            <textarea data-r="idir-shot-prompts" style="min-height:100px;font-size:11px" placeholder="每组一段【生图-…】"></textarea>
-          </div>
-          <div class="bd-studio-row" style="margin-top:6px">
-            <button type="button" class="bd-btn bd-btn-primary" data-a="idir-queue-stills" data-r="idir-queue-label">② 仅生参考图并预览</button>
-            <button type="button" class="bd-btn" data-a="idir-ready-video" data-r="idir-ready-label">③ 确认图 → 准备出片</button>
-          </div>
-          <div class="bd-idir-preview" data-r="idir-preview" style="display:flex;flex-wrap:wrap;gap:6px;margin:8px 0;min-height:0"></div>
-          <div class="bd-studio-status" data-r="idir-status"></div>
-          <div class="bd-meta" style="font-size:11px;color:#8b93a7;line-height:1.4" data-r="idir-hint">
+          <div class="h3d-idir-preview" data-r="idir-preview" style="display:flex;flex-wrap:wrap;gap:6px;margin:8px 0;min-height:0"></div>
+          <div class="h3d-studio-status" data-r="idir-status"></div>
+          <div class="h3d-meta" style="font-size:11px;color:#8b93a7;line-height:1.4" data-r="idir-hint">
             本地可切换多种文生图：SDXL（Checkpoint）、Z-Image-Turbo BF16、FLUX（均接 ref_gen_*）。选「本地模型族」会套用推荐采样并显示接线。云端可用更强 API。点②预览；确认后③再 Queue 出片。
           </div>
         </div>
-        <div class="bd-studio-page" data-page="director">
-          <div class="bd-studio-row">
-            <div class="bd-studio-field" style="width:160px"><label>推理后端</label>
+        <div class="h3d-studio-page" data-page="director">
+          <div class="h3d-studio-row">
+            <div class="h3d-studio-field" style="width:160px"><label>推理后端</label>
               <select data-r="ld-backend">
                 <option value="local">本地 GGUF</option>
                 <option value="cloud">云端 API</option>
               </select>
             </div>
-            <div class="bd-meta" data-r="ld-backend-hint" style="flex:1;font-size:11px;color:#8b93a7;align-self:center">
+            <div class="h3d-meta" data-r="ld-backend-hint" style="flex:1;font-size:11px;color:#8b93a7;align-self:center">
               本地需 LLM Text Processor + GGUF；云端支持 Ollama / 智谱 / OpenAI Compatible
             </div>
           </div>
-          <div class="bd-studio-field"><label>整片故事 / 创意简述</label>
-            <textarea data-r="ld-brief" placeholder="短故事或创意梗概。拆分镜 / 按组扩写时用作剧情推进依据。" style="min-height:64px"></textarea>
-          </div>
-          <div class="bd-studio-field">
-            <div class="bd-studio-row" style="justify-content:space-between;align-items:center;gap:6px;margin-bottom:4px">
-              <label style="margin:0">全局提示词</label>
-              <span class="bd-studio-row" style="gap:4px;flex-wrap:wrap">
-                <button type="button" class="bd-btn" data-a="ld-global-from-tl" title="从时间线主全局提示词读入">← 时间线</button>
-                <button type="button" class="bd-btn" data-a="ld-global-to-tl" title="把本框内容写回时间线全局提示词">→ 时间线</button>
-                <button type="button" class="bd-btn" data-a="ld-global-clear" title="清空本框">清空</button>
-              </span>
+          <div class="h3d-studio-grid h3d-studio-grid-2 h3d-studio-grid-tall">
+            <div class="h3d-studio-field"><label>整片故事 / 创意简述</label>
+              <textarea data-r="ld-brief" placeholder="短故事或创意梗概。拆分镜 / 按组扩写时用作剧情推进依据。" style="min-height:140px"></textarea>
             </div>
-            <textarea data-r="ld-global-prompt" style="min-height:120px" placeholder="在此填写要保留/扩写的全局内容：风格、角色外貌、主场景空间、贯穿声景与配乐等。扩写分镜时会作为必须保留的全局信息传入；也可点「→ 全局」单独扩写本框。"></textarea>
-            <div class="bd-meta" style="font-size:11px;color:#8b93a7;margin-top:4px;line-height:1.4">
-              扩写各组时会带上本框内容；结果里的 <<<GLOBAL>>> 也会写回这里与时间线。
+            <div class="h3d-studio-field">
+              <div class="h3d-studio-row" style="justify-content:space-between;align-items:center;gap:6px;margin-bottom:0">
+                <label style="margin:0">全局提示词</label>
+                <span class="h3d-studio-row" style="gap:4px;flex-wrap:wrap">
+                  <button type="button" class="h3d-btn" data-a="ld-global-from-tl" title="从时间线主全局提示词读入">← 时间线</button>
+                  <button type="button" class="h3d-btn" data-a="ld-global-to-tl" title="把本框内容写回时间线全局提示词">→ 时间线</button>
+                  <button type="button" class="h3d-btn" data-a="ld-global-clear" title="清空本框">清空</button>
+                </span>
+              </div>
+              <textarea data-r="ld-global-prompt" style="min-height:140px" placeholder="在此填写要保留/扩写的全局内容：风格、角色外貌、主场景空间、贯穿声景与配乐等。扩写分镜时会作为必须保留的全局信息传入；也可点「→ 全局」单独扩写本框。"></textarea>
+              <div class="h3d-meta" style="font-size:11px;color:#8b93a7;margin-top:4px;line-height:1.4">
+                扩写各组时会带上本框内容；结果里的 <<<GLOBAL>>> 也会写回这里与时间线。
+              </div>
             </div>
           </div>
           <div data-r="ld-local-panel">
-            <div class="bd-studio-field"><label>GGUF 模型</label><select data-r="ld-model"><option value="">加载中…</option></select></div>
+            <div class="h3d-studio-field"><label>GGUF 模型</label><select data-r="ld-model"><option value="">加载中…</option></select></div>
           </div>
           <div data-r="ld-cloud-panel" class="hidden">
-            <div class="bd-studio-row">
-              <div class="bd-studio-field" style="flex:1;min-width:120px"><label>API 格式</label>
+            <div class="h3d-studio-row">
+              <div class="h3d-studio-field" style="flex:1;min-width:120px"><label>API 格式</label>
                 <select data-r="ld-api-format">
                   <option value="Ollama">Ollama</option>
                   <option value="智谱 GLM">智谱 GLM</option>
                   <option value="OpenAI Compatible">OpenAI Compatible</option>
                 </select>
               </div>
-              <div class="bd-studio-field" style="flex:2"><label>API URL</label>
+              <div class="h3d-studio-field" style="flex:2"><label>API URL</label>
                 <input type="text" data-r="ld-api-url" placeholder="http://127.0.0.1:11434">
               </div>
             </div>
-            <div class="bd-studio-row">
-              <div class="bd-studio-field" style="flex:2"><label>云端模型</label>
+            <div class="h3d-studio-row">
+              <div class="h3d-studio-field" style="flex:2"><label>云端模型</label>
                 <input type="text" data-r="ld-api-model" list="ld-api-model-list" placeholder="glm-5.2 / glm-4-flash…">
                 <datalist id="ld-api-model-list" data-r="ld-api-model-list"></datalist>
               </div>
-              <div class="bd-studio-field" style="flex:1.2" data-r="ld-api-key-wrap"><label>API Key</label>
+              <div class="h3d-studio-field" style="flex:1.2" data-r="ld-api-key-wrap"><label>API Key</label>
                 <input type="password" data-r="ld-api-key" placeholder="智谱必填；其它可选" autocomplete="off">
               </div>
-              <button type="button" class="bd-btn" data-a="ld-fetch-models" style="align-self:flex-end;margin-bottom:2px">刷新模型</button>
+              <button type="button" class="h3d-btn" data-a="ld-fetch-models" style="align-self:flex-end;margin-bottom:2px">刷新模型</button>
             </div>
           </div>
-          <div class="bd-studio-row">
-            <div class="bd-studio-field" style="flex:1"><label>模式（随任务自动）</label>
+          <div class="h3d-studio-row">
+            <div class="h3d-studio-field" style="flex:1"><label>模式（随任务自动）</label>
               <select data-r="ld-mode"><option>T2VA</option><option>I2VA</option><option>FL2VA</option><option>L2VA</option><option>REF2VA</option></select>
             </div>
-            <div class="bd-studio-field" style="flex:1.4"><label>风格 Skill</label>
-              <select data-r="ld-skill" title="官方 MiniMax-H3 风格技能精简版，扩写时注入">
-                <option value="none">通用（官方 H3 规范）</option>
+            <div class="h3d-studio-field" style="flex:1.4"><label>风格 Skill</label>
+              <select data-r="ld-skill" title="H3 风格技能精简版，扩写时注入">
+                <option value="none">通用（H3 规范）</option>
                 <option value="minimalist-product-ad">极简产品广告</option>
                 <option value="3d-animation-short">3D 动画短片</option>
                 <option value="papercraft-stop-motion">剪纸定格解说</option>
@@ -1491,56 +1453,57 @@ export function mountStudioDesk(editor) {
                 <option value="handdrawn-live">手绘+实拍混搭</option>
               </select>
             </div>
-            <div class="bd-studio-field" style="width:88px"><label>拆分镜数</label>
+            <div class="h3d-studio-field" data-r="ld-shot-count-wrap" style="width:88px"><label>拆分镜数</label>
               <input type="number" data-r="ld-shot-count" min="1" max="16" step="1" value="2" title="「故事 → N 组分镜」的固定组数">
             </div>
-            <label class="bd-studio-row" style="align-self:flex-end;margin-bottom:4px" title="智谱 GLM-5.x：开启后会带 thinking 参数（更慢更贵，质量可能更好）">
+            <label class="h3d-studio-row" style="align-self:flex-end;margin-bottom:4px" title="智谱 GLM-5.x：开启后会带 thinking 参数（更慢更贵，质量可能更好）">
               <input type="checkbox" data-r="ld-zhipu-thinking">智谱深度思考
             </label>
           </div>
-          <div class="bd-studio-row" title="仅「故事 → 自动分镜」使用：镜数与单镜时长上下限">
-            <div class="bd-studio-field" style="width:76px"><label>镜数下限</label>
+          <div class="h3d-studio-row" data-r="ld-shot-range-row" title="仅「故事 → 自动分镜」使用：镜数与单镜时长上下限">
+            <div class="h3d-studio-field" style="width:76px"><label>镜数下限</label>
               <input type="number" data-r="ld-shot-min" min="1" max="16" step="1" value="2">
             </div>
-            <div class="bd-studio-field" style="width:76px"><label>镜数上限</label>
+            <div class="h3d-studio-field" style="width:76px"><label>镜数上限</label>
               <input type="number" data-r="ld-shot-max" min="1" max="16" step="1" value="8">
             </div>
-            <div class="bd-studio-field" style="width:88px"><label>单镜秒下限</label>
+            <div class="h3d-studio-field" style="width:88px"><label>单镜秒下限</label>
               <input type="number" data-r="ld-dur-min" min="1" max="30" step="0.5" value="2">
             </div>
-            <div class="bd-studio-field" style="width:88px"><label>单镜秒上限</label>
+            <div class="h3d-studio-field" style="width:88px"><label>单镜秒上限</label>
               <input type="number" data-r="ld-dur-max" min="1" max="30" step="0.5" value="12">
             </div>
           </div>
-          <div class="bd-meta" data-r="ld-mode-hint" style="font-size:11px;color:#8b93a7;margin:-2px 0 4px"></div>
-          <div class="bd-meta" style="font-size:11px;color:#8b93a7;margin:0 0 6px;line-height:1.45">
+          <div class="h3d-meta" data-r="ld-mode-hint" style="font-size:11px;color:#8b93a7;margin:-2px 0 4px"></div>
+          <div class="h3d-meta" data-r="ld-flow-hint" style="font-size:11px;color:#8b93a7;margin:0 0 6px;line-height:1.45">
             流程：故事分镜 →（可选）连续性/声景 →（可选）参考图或首尾帧；已有各组简述时用「按组扩写」。各按钮只做一步，不会自动连锁其它步骤。
           </div>
-          <div class="bd-studio-row">
-            <button type="button" class="bd-btn bd-btn-primary" data-a="ld-expand-groups" title="只扩写尚未完整的组简述；已是完整提示词的组会跳过，不会重跑分镜/连续性/参考图">按提示词组扩写并同步</button>
-            <button type="button" class="bd-btn bd-btn-primary" data-a="ld-story-auto" title="只按剧情写出分镜组与全局提示词；不会自动填连续性/声景或参考图">故事 → 自动分镜</button>
-            <button type="button" class="bd-btn" data-a="ld-story-split" title="只把故事拆成固定 N 组分镜；不会自动填连续性/声景或参考图">故事 → N 组分镜</button>
-            <button type="button" class="bd-btn" data-a="ld-fill-bible" title="只填充「连续性」角色/场景/道具与「全局声景」风格/声景/配乐；不改分镜提示词">故事 → 连续性/声景</button>
-            <button type="button" class="bd-btn" data-a="ld-extract-assets" title="只写入参考图导演的人物/场景生图提示词；已有连续性字段不会被覆盖">人物/场景 → 参考图导演</button>
-            <button type="button" class="bd-btn hidden" data-a="ld-extract-fl" title="只生成各组首帧/尾帧文生图提示词到首尾帧导演；不改分镜正文">内容 → 首尾帧导演</button>
-            <button type="button" class="bd-btn" data-a="ld-expand-seg" title="只扩写当前选中的提示词组">仅当前组</button>
-            <button type="button" class="bd-btn" data-a="ld-expand" title="只扩写并写入全局提示词">→ 全局</button>
+          <div class="h3d-studio-row">
+            <button type="button" class="h3d-btn h3d-btn-primary" data-a="ld-expand-groups" title="只扩写尚未完整的组简述；已是完整提示词的组会跳过，不会重跑分镜/连续性/参考图">按提示词组扩写并同步</button>
+            <button type="button" class="h3d-btn h3d-btn-primary" data-a="ld-story-auto" data-r="ld-shot-split-action" title="只按剧情写出分镜组与全局提示词；不会自动填连续性/声景或参考图">故事 → 自动分镜</button>
+            <button type="button" class="h3d-btn" data-a="ld-story-split" data-r="ld-shot-split-action" title="只把故事拆成固定 N 组分镜；不会自动填连续性/声景或参考图">故事 → N 组分镜</button>
+            <button type="button" class="h3d-btn" data-a="ld-fill-bible" title="只填充「连续性」角色/场景/道具与「全局声景」风格/声景/配乐；不改分镜提示词">故事 → 连续性/声景</button>
+            <button type="button" class="h3d-btn" data-a="ld-extract-assets" title="只写入参考图导演的人物/场景生图提示词；已有连续性字段不会被覆盖">人物/场景 → 参考图导演</button>
+            <button type="button" class="h3d-btn hidden" data-a="ld-extract-fl" title="只生成各组首帧/尾帧文生图提示词到首尾帧导演；不改分镜正文">内容 → 首尾帧导演</button>
+            <button type="button" class="h3d-btn" data-a="ld-expand-seg" data-r="ld-seg-only-action" title="只扩写当前选中的提示词组">仅当前组</button>
+            <button type="button" class="h3d-btn" data-a="ld-expand" title="只扩写并写入全局提示词">→ 全局</button>
           </div>
-          <div class="bd-studio-status" data-r="ld-status"></div>
+          <div class="h3d-studio-status" data-r="ld-status"></div>
         </div>
-        <div class="bd-studio-page" data-page="export">
-          <div class="bd-studio-row">
-            <button type="button" class="bd-btn" data-a="export-shots">导出分镜表 Markdown</button>
-            <button type="button" class="bd-btn" data-a="copy-shots">复制到剪贴板</button>
+        <div class="h3d-studio-page" data-page="export">
+          <div class="h3d-studio-row">
+            <button type="button" class="h3d-btn" data-a="export-shots">导出分镜表 Markdown</button>
+            <button type="button" class="h3d-btn" data-a="copy-shots">复制到剪贴板</button>
           </div>
-          <div class="bd-studio-field"><label>分镜表预览</label><textarea data-r="shot-preview" readonly style="min-height:120px;font-family:ui-monospace,monospace;font-size:11px"></textarea></div>
+          <div class="h3d-studio-field"><label>分镜表预览</label><textarea data-r="shot-preview" readonly style="min-height:120px;font-family:ui-monospace,monospace;font-size:11px"></textarea></div>
         </div>
+      </div>
       </div>`;
-    // Place desk beside main timeline (horizontal workbench), not stacked below
-    let workbench = editor.root.querySelector(".bd-workbench");
+    // Shell: media column | vertical-nav desk (not vendor stacked panel)
+    let workbench = editor.root.querySelector(".h3d-workbench");
     if (!workbench) {
         workbench = document.createElement("div");
-        workbench.className = "bd-workbench";
+        workbench.className = "h3d-workbench h3d-shell-v2";
         const main = editor.mainBody;
         if (main?.parentNode === editor.root) {
             editor.root.insertBefore(workbench, main);
@@ -1552,6 +1515,7 @@ export function mountStudioDesk(editor) {
             editor.root.appendChild(workbench);
         }
     }
+    workbench.classList.add("h3d-shell-v2");
     workbench.appendChild(desk);
     editor.studioDesk = desk;
     editor.workbench = workbench;
@@ -1559,7 +1523,7 @@ export function mountStudioDesk(editor) {
     requestAnimationFrame(() => editor.updateDomWidgetHeight?.());
 
     // Keep wheel scrolling inside desk (don't zoom/pan Comfy canvas)
-    const deskBody = desk.querySelector(".bd-studio-desk-body");
+    const deskBody = desk.querySelector(".h3d-studio-desk-body");
     if (deskBody) {
         deskBody.addEventListener(
             "wheel",
@@ -1586,7 +1550,7 @@ export function mountStudioDesk(editor) {
 
     desk.querySelector('[data-r="desk-toggle"]').onclick = () => {
         desk.classList.toggle("open");
-        const meta = desk.querySelector(".bd-studio-desk-head .bd-meta");
+        const meta = desk.querySelector(".h3d-studio-desk-head .h3d-meta");
         if (meta) meta.textContent = desk.classList.contains("open") ? "点击折叠" : "点击展开";
         editor.updateDomWidgetHeight?.();
         editor._markNodeDirtyLight?.();
@@ -2569,10 +2533,11 @@ export function mountStudioDesk(editor) {
     q('[data-a="ld-fetch-models"]').onclick = () => { void fetchCloudModels(false); };
 
     /** Write expanded single-shot prompts into prompt groups (segments). */
-    const applyShotsToGroups = (shots) => {
+    const applyShotsToGroups = (shots, { keepScope = false } = {}) => {
         if (!Array.isArray(shots) || !shots.length) return 0;
         ensureTimelineStudio(editor.timeline);
-        editor.timeline.editMode = "segment";
+        // 拆分镜结果进入分镜模式；整局单组扩写则保留整局
+        if (!keepScope) editor.timeline.editMode = "segment";
         if (!Array.isArray(editor.timeline.segments)) editor.timeline.segments = [];
 
         const taskKey = editor.getTaskKey?.() || "t2v";
@@ -2634,9 +2599,17 @@ export function mountStudioDesk(editor) {
         if (!requireModel()) return;
         editor.harvestBatchPrompts?.();
         syncLocalDirectorForTask(editor);
+        const globalScope = (editor.timeline?.editMode || "global") === "global"
+            || editor.isGlobalMode?.();
         const segs = editor.timeline.segments || [];
         if (!segs.length) {
-            setStatus(statusEl, "没有提示词组。请先「添加提示词组」或用「故事 → N 组分镜」", "err");
+            setStatus(
+                statusEl,
+                globalScope
+                    ? "没有成片提示词槽。请先在整局内容里填写简述，或用「→ 全局」"
+                    : "没有提示词组。请先「添加提示词组」或用「故事 → N 组分镜」",
+                "err",
+            );
             return;
         }
         const taskKey = editor.getTaskKey?.() || "t2v";
@@ -2644,7 +2617,10 @@ export function mountStudioDesk(editor) {
         const story = q('[data-r="ld-brief"]')?.value?.trim() || "";
         const pending = [];
         let skipped = 0;
-        segs.forEach((seg, i) => {
+        const indices = globalScope ? [0] : segs.map((_, i) => i);
+        indices.forEach((i) => {
+            const seg = segs[i];
+            if (!seg) return;
             const raw = String(seg.prompt || "").trim();
             if (raw && looksExpandedPrompt(raw)) {
                 skipped += 1;
@@ -2656,7 +2632,7 @@ export function mountStudioDesk(editor) {
                 index: i,
                 brief: raw || "",
                 prompt: raw || "",
-                label: seg.label || `分镜${i + 1}`,
+                label: seg.label || (globalScope ? "整局成片" : `分镜${i + 1}`),
                 duration: Number(seg.durationSec) || defaultDurationSec(taskKey),
             });
         });
@@ -2664,19 +2640,29 @@ export function mountStudioDesk(editor) {
             if (skipped > 0) {
                 setStatus(
                     statusEl,
-                    "各组已是完整提示词，无需再扩；改简述后再点，或用「故事 → 自动分镜 / N 组分镜」重做",
+                    globalScope
+                        ? "成片提示词已完整，无需再扩；改简述后再点，或用「→ 全局」"
+                        : "各组已是完整提示词，无需再扩；改简述后再点，或用「故事 → 自动分镜 / N 组分镜」重做",
                     "ok",
                 );
             } else {
-                setStatus(statusEl, "请先在各组填写简述，或在上方填写整片故事", "err");
+                setStatus(
+                    statusEl,
+                    globalScope
+                        ? "请先填写成片简述，或在上方填写整片故事"
+                        : "请先在各组填写简述，或在上方填写整片故事",
+                    "err",
+                );
             }
             return;
         }
         setStatus(
             statusEl,
-            `正在按 ${taskKey}/${mode}：扩写 ${pending.length} 组`
-            + (skipped ? `（跳过 ${skipped} 组已完整提示词）` : "")
-            + "…",
+            globalScope
+                ? `正在按 ${taskKey}/${mode}：扩写整局成片提示词…`
+                : `正在按 ${taskKey}/${mode}：扩写 ${pending.length} 组`
+                    + (skipped ? `（跳过 ${skipped} 组已完整提示词）` : "")
+                    + "…",
         );
         try {
             const body = commonBody({
@@ -2695,16 +2681,18 @@ export function mountStudioDesk(editor) {
             });
             const data = await readApiJson(res);
             if (!data?.ok) throw new Error(data?.error || `HTTP ${res.status}`);
-            const count = applyShotsToGroups(data.shots || []);
+            const count = applyShotsToGroups(data.shots || [], { keepScope: globalScope });
             if (data.global_prompt) applyGlobalPrompt(data.global_prompt);
             const skipNote = skipped ? `，跳过 ${skipped} 组已完整` : "";
             setStatus(
                 statusEl,
-                `已同步 ${count} 组${skipNote}`
+                (globalScope ? `已同步成片提示词` : `已同步 ${count} 组`)
+                + (globalScope ? "" : skipNote)
                 + (data.global_prompt ? "，并更新全局提示词" : "")
                 + `（模式 ${mode}，任务 ${taskKey}）`,
                 "ok",
             );
+            if (globalScope) editor.syncLocalDirectorForTask?.();
         } catch (err) {
             setStatus(statusEl, String(err?.message || err), "err");
         }
@@ -2771,6 +2759,10 @@ export function mountStudioDesk(editor) {
     };
 
     const doStorySplit = async () => {
+        if ((editor.timeline?.editMode || "global") === "global" || editor.isGlobalMode?.()) {
+            setStatus(statusEl, "整局模式为单视频流程，不能拆分镜。请切到「分镜模式」，或用「→ 全局」扩写成片提示词", "err");
+            return;
+        }
         if (!requireModel()) return;
         syncLocalDirectorForTask(editor);
         const brief = q('[data-r="ld-brief"]')?.value?.trim() || "";
@@ -2819,6 +2811,10 @@ export function mountStudioDesk(editor) {
     };
 
     const doStoryAuto = async () => {
+        if ((editor.timeline?.editMode || "global") === "global" || editor.isGlobalMode?.()) {
+            setStatus(statusEl, "整局模式为单视频流程，不能自动分镜。请切到「分镜模式」，或用「→ 全局」扩写成片提示词", "err");
+            return;
+        }
         if (!requireModel()) return;
         syncLocalDirectorForTask(editor);
         const brief = q('[data-r="ld-brief"]')?.value?.trim() || "";
@@ -3363,9 +3359,19 @@ export function mountStudioDesk(editor) {
     }
 
     editor.updateImageDirectorVisibility = () => updateImageDirectorVisibility(editor);
+    editor.syncLocalDirectorForTask = () => syncLocalDirectorForTask(editor);
     syncSegStudioFields(editor);
     syncDeskFields(editor);
     updateImageDirectorVisibility(editor);
+    syncLocalDirectorForTask(editor);
+
+    // Production binder: step wizard IA (bible → shots → media → output)
+    try {
+        applyBinderShell(editor);
+    } catch (err) {
+        console.warn("[MiniMaxH3Director] binder shell failed:", err);
+    }
+    requestAnimationFrame(() => editor.updateDomWidgetHeight?.());
 }
 
 function syncSegStudioFields(editor) {
@@ -3394,6 +3400,8 @@ export function syncLocalDirectorForTask(editor) {
     if (!desk) return;
     const taskKey = editor.getTaskKey?.() || "t2v";
     const mode = directorModeFromTaskKey(taskKey);
+    const globalScope = (editor.timeline?.editMode || "global") === "global"
+        || (typeof editor.isGlobalMode === "function" && editor.isGlobalMode());
     const modeSel = desk.querySelector('[data-r="ld-mode"]');
     // Always follow generation task → director MODE (文生/图生/首尾帧/改视频)
     if (modeSel) {
@@ -3405,6 +3413,36 @@ export function syncLocalDirectorForTask(editor) {
     if (shotEl && document.activeElement !== shotEl && !shotEl.dataset.userSet) {
         if (taskUsesPromptGroups(taskKey)) shotEl.value = String(nGroups);
     }
+
+    // 整局：单视频，无分镜 — 隐藏自动分镜 / N 组分镜与镜数区间
+    const hideSplit = globalScope;
+    const shotCountWrap = desk.querySelector('[data-r="ld-shot-count-wrap"]')
+        || desk.querySelector('[data-r="ld-shot-count"]')?.closest?.(".h3d-studio-field");
+    shotCountWrap?.classList.toggle("hidden", hideSplit);
+    const shotRangeRow = desk.querySelector('[data-r="ld-shot-range-row"]')
+        || desk.querySelector('[data-r="ld-shot-min"]')?.closest?.(".h3d-studio-row");
+    shotRangeRow?.classList.toggle("hidden", hideSplit);
+    for (const sel of [
+        '[data-r="ld-shot-split-action"]',
+        '[data-a="ld-story-auto"]',
+        '[data-a="ld-story-split"]',
+    ]) {
+        desk.querySelectorAll(sel).forEach((el) => el.classList.toggle("hidden", hideSplit));
+    }
+    const segOnly = desk.querySelector('[data-r="ld-seg-only-action"]')
+        || desk.querySelector('[data-a="ld-expand-seg"]');
+    segOnly?.classList.toggle("hidden", hideSplit);
+    const expandGroupsBtn = desk.querySelector('[data-a="ld-expand-groups"]');
+    if (expandGroupsBtn) {
+        // 整局仍可扩写第 1 组成片提示词（非拆分镜）
+        expandGroupsBtn.textContent = hideSplit
+            ? "扩写成片提示词并同步"
+            : "按提示词组扩写并同步";
+        expandGroupsBtn.title = hideSplit
+            ? "只扩写当前整局成片提示词；不会拆分镜"
+            : "只扩写尚未完整的组简述；已是完整提示词的组会跳过，不会重跑分镜/连续性/参考图";
+    }
+
     const hint = desk.querySelector('[data-r="ld-mode-hint"]');
     if (hint) {
         const labels = {
@@ -3413,10 +3451,33 @@ export function syncLocalDirectorForTask(editor) {
             FL2VA: "首尾帧",
             L2VA: "视频改视频 / 尾帧",
         };
-        const groupNote = taskUsesPromptGroups(taskKey)
-            ? `当前 ${nGroups} 个提示词组 → 按组扩写`
-            : "当前为时间线模式 → 可写全局或拆成多组";
+        const key = String(taskKey || "").split(" — ", 1)[0].trim();
+        let groupNote;
+        if (key === "m2v") {
+            groupNote = globalScope
+                ? "动作迁移 · 媒体轨动作视频（按时长）+ 角色图 →「→ 全局」扩写"
+                : `动作迁移 · 当前 ${nGroups} 分段（均分/裁切）→ 按组扩写；图片定角色`;
+        } else if (globalScope) {
+            groupNote = "整局模式 · 单视频，不可自动分镜 → 用「→ 全局」扩写成片提示词";
+        } else if (taskUsesPromptGroups(taskKey)) {
+            groupNote = `当前 ${nGroups} 个提示词组 → 按组扩写`;
+        } else {
+            groupNote = "当前为时间线模式 → 可写全局或拆成多组";
+        }
         hint.textContent = `任务 ${taskKey} → 导演模式 ${mode}（${labels[mode] || mode}）。${groupNote}`;
+    }
+    const flow = desk.querySelector('[data-r="ld-flow-hint"]');
+    if (flow) {
+        const key = String(taskKey || "").split(" — ", 1)[0].trim();
+        if (key === "m2v") {
+            flow.textContent = globalScope
+                ? "动作迁移：媒体轨上传单路动作视频（预览/裁切）+ 角色图 → 秒数默认同视频时长可手调 →「→ 全局」扩写 → Queue。"
+                : "动作迁移分镜：媒体轨均分/分割后按分段生成；每段秒数默认同分段时长可手调；卡片只配角色图与提示词。";
+        } else {
+            flow.textContent = globalScope
+                ? "整局流程：故事 / 简述 →（可选）连续性/声景 →「→ 全局」扩写成片提示词 →（可选）参考图或首尾帧。无分镜、不分镜组。"
+                : "流程：故事分镜 →（可选）连续性/声景 →（可选）参考图或首尾帧；已有各组简述时用「按组扩写」。各按钮只做一步，不会自动连锁其它步骤。";
+        }
     }
 }
 
@@ -3437,9 +3498,9 @@ export function updateImageDirectorVisibility(editor) {
     if (title) {
         title.textContent = show
             ? (isFl
-                ? "导演台 · 连续性 / 声景 / 提示词导演 / 首尾帧"
-                : "导演台 · 连续性 / 声景 / 提示词导演 / 参考图")
-            : "导演台 · 连续性 / 声景 / 提示词导演";
+                ? "H3 导演工台 · 连续性 / 声景 / 提示词 / 首尾帧"
+                : "H3 导演工台 · 连续性 / 声景 / 提示词 / 参考图")
+            : "H3 导演工台 · 连续性 / 声景 / 提示词";
     }
 
     const i2vBlock = desk.querySelector('[data-r="idir-i2v-block"]');

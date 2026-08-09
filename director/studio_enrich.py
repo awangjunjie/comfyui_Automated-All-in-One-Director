@@ -338,7 +338,7 @@ def enrich_timeline_dict(timeline: dict) -> dict:
     segs = [s for s in (timeline.get("segments") or []) if isinstance(s, dict)]
     is_prompt_batch = (
         timeline_mode in ("prompt_batch", "image_batch", "fl2v")
-        or task_key in ("t2v", "i2v", "r2v", "fl2v")
+        or task_key in ("t2v", "i2v", "r2v", "m2v", "fl2v")
         or len(segs) > 1
     )
 

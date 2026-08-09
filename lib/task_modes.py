@@ -12,6 +12,7 @@ class MiniMaxH3Task(str, Enum):
     FL2V = "fl2v"
     FL_CHAIN = "fl_chain"
     R2V = "r2v"
+    M2V = "m2v"
     V2V = "v2v"
     RV2V = "rv2v"
 
@@ -22,6 +23,7 @@ TASK_DESCRIPTIONS = {
     MiniMaxH3Task.FL2V: "First+last keyframe AV",
     MiniMaxH3Task.FL_CHAIN: "Chained first/last AV — previous shot last frame → next first frame",
     MiniMaxH3Task.R2V: "Reference-to AV — subject images (+ optional tags) in prompt",
+    MiniMaxH3Task.M2V: "Motion transfer — reference video for motion + images for subject (r2v pipeline)",
     MiniMaxH3Task.V2V: "Video edit — source timeline clip as <Video 1> reference",
     MiniMaxH3Task.RV2V: "Video edit with reference images — source <Video 1> + <Picture N>",
 }

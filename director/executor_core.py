@@ -9,6 +9,7 @@ import torch
 
 from ..lib.image_prep import fit_canvas, fit_video_long_edge
 from ..lib.task_modes import SUPPORTED_TASK_KEYS
+from ..lib.task_prompts import is_r2v_like
 from ..nodes.conditioning import run_minimax_conditioning
 from .core_sampling import sample_single_stage
 from .frame_align import minimax_align_frame_count, pad_or_trim_frames
@@ -33,6 +34,7 @@ from .plan import (
     ref_videos_to_dict,
     reference_video_for_segment,
     refs_to_kwargs_for_context,
+    reinforce_m2v_prompt,
     reinforce_r2v_prompt,
     reinforce_rv2v_prompt,
     reinforce_v2v_prompt,
@@ -40,6 +42,7 @@ from .plan import (
 from .progress import report_director_finish, report_director_progress, report_director_segment_preview
 from .segment_cache import load_segment_cache, save_segment_cache
 from .segment_continuity import (
+    apply_seam_dedupe_to_chunk,
     concat_continuous_chunks,
     is_continuity_active,
     lock_chain_opening_frame,
@@ -187,9 +190,9 @@ def _build_minimax_inputs(
                 )
             except Exception as exc:
                 log.warning("t2v prev_tail inject failed: %s", exc)
-    elif task_key in {"i2v", "r2v"}:
+    elif task_key in {"i2v", "r2v", "m2v"}:
         # i2v: soft refs via ReferenceToVideo; with chain → hard first_frame (ImageToVideo).
-        # r2v: soft <Picture N>; chain reserves Picture 1 + post-decode pixel lock.
+        # r2v/m2v: soft <Picture N>; chain reserves Picture 1 + post-decode pixel lock.
         ref_kwargs = refs_to_kwargs_for_context(task_key, seg.refs)
         ref_images = {}
         for key, tensor in ref_kwargs.items():
@@ -230,8 +233,8 @@ def _build_minimax_inputs(
                 log.warning("%s prev_tail inject failed: %s", task_key, exc)
         if not ref_images:
             ref_images = None
-        if task_key == "r2v":
-            # Prefer multi-slot ref_videos (r2v batch cards); fall back to legacy single meta.
+        if is_r2v_like(task_key):
+            # Prefer multi-slot ref_videos (r2v/m2v batch cards); fall back to legacy single meta.
             ref_videos = ref_videos_to_dict(getattr(seg, "ref_videos", None) or [])
             if not ref_videos:
                 nframes = max(5, int(getattr(seg, "frame_count", 0) or plan.total_frames or 124))
@@ -239,6 +242,17 @@ def _build_minimax_inputs(
                 if ref_video is not None and ref_video.shape[0] > 0:
                     ref_videos = {"ref_video_0": ref_video}
             ref_audios = ref_audios_to_dict(getattr(seg, "ref_audios", None) or [])
+            if task_key == "m2v":
+                if not ref_videos:
+                    raise ValueError(
+                        f"动作迁移 (m2v) 第 {int(getattr(seg, 'index', 0)) + 1} 组缺少参考视频："
+                        "请上传视频1 作为动作/运镜源。"
+                    )
+                if not ref_images:
+                    raise ValueError(
+                        f"动作迁移 (m2v) 第 {int(getattr(seg, 'index', 0)) + 1} 组缺少参考图："
+                        "请上传图片1（角色/外观）。"
+                    )
     elif task_key in {"v2v", "rv2v"}:
         # Bernini-style video edit: each timeline segment's source clip → <Video 1>.
         # rv2v additionally injects 图片1–9 / 音频1–3 as <Picture N> / <Audio J>.
@@ -321,8 +335,44 @@ def execute_director_plan_core(
         )
     else:
         reports.append("Segment continuity: OFF — per-segment generation only.")
+    if getattr(plan, "seam_dedupe_enabled", False):
+        reports.append(
+            f"Seam dedupe: ON — drop highly similar junction frames "
+            f"(judge={int(getattr(plan, 'seam_judge_frames', 8) or 8)})."
+        )
 
     completed_outputs: dict[int, torch.Tensor] = {}
+
+    def _trim_audio_leading(audio_dict, drop_frames: int):
+        if not audio_dict or drop_frames <= 0:
+            return audio_dict
+        wave = audio_dict.get("waveform")
+        if not isinstance(wave, torch.Tensor) or wave.ndim != 3:
+            return audio_dict
+        from ..lib.audio_io import frames_to_audio_samples
+
+        sr = int(audio_dict.get("sample_rate") or 24000) or 24000
+        n = frames_to_audio_samples(drop_frames, float(plan.frame_rate or 24), sr)
+        if n <= 0:
+            return audio_dict
+        if int(wave.shape[-1]) <= n:
+            return empty_audio_dict(sr)
+        return {"waveform": wave[..., n:].contiguous(), "sample_rate": sr}
+
+    def _apply_seam_dedupe(chunk, seg, audio_dict=None):
+        if not getattr(plan, "seam_dedupe_enabled", False) or int(getattr(seg, "index", 0) or 0) <= 0:
+            return chunk, audio_dict, 0
+        prev = resolve_prev_segment_output(
+            plan, all_segments, seg.index, completed_outputs, node_id
+        )
+        trimmed, dropped = apply_seam_dedupe_to_chunk(
+            chunk,
+            prev,
+            judge_frames=int(getattr(plan, "seam_judge_frames", 8) or 8),
+        )
+        if dropped > 0:
+            audio_dict = _trim_audio_leading(audio_dict, dropped)
+        return trimmed, audio_dict, dropped
 
     def _run_one_segment(seg, *, progress_index: int) -> tuple[torch.Tensor, dict[str, Any] | None]:
         if seg.task_key not in SUPPORTED_TASK_KEYS:
@@ -365,7 +415,10 @@ def execute_director_plan_core(
             clip_frames, _ = prepare_segment_clip(clip_frames, num_frames)
 
         prev_tail = None
-        if is_continuity_active(plan, seg):
+        need_prev = is_continuity_active(plan, seg) or (
+            getattr(plan, "seam_dedupe_enabled", False) and int(getattr(seg, "index", 0) or 0) > 0
+        )
+        if need_prev:
             prev_tail = resolve_prev_segment_output(
                 plan, all_segments, seg.index, completed_outputs, node_id
             )
@@ -408,7 +461,7 @@ def execute_director_plan_core(
                     has_end_frame=False,
                     chained=True,
                 )
-        elif seg.task_key in {"r2v", "i2v"}:
+        elif seg.task_key in {"r2v", "m2v", "i2v"}:
             from .fl2v_timeline import reinforce_fl_chain_prompt, reinforce_ref_chain_prompt
 
             # i2v + chain uses ImageToVideo first_frame hard lock → fl_chain prompt language.
@@ -422,21 +475,29 @@ def execute_director_plan_core(
                 ref_idxs = [int(getattr(r, "index", 0)) for r in (seg.refs or []) if r is not None]
                 vid_idxs = (
                     [int(getattr(v, "index", 0)) for v in (getattr(seg, "ref_videos", None) or []) if v is not None]
-                    if seg.task_key == "r2v"
+                    if is_r2v_like(seg.task_key)
                     else []
                 )
                 audio_idxs = (
                     [int(getattr(a, "index", 0)) for a in (seg.ref_audios or []) if a is not None]
-                    if seg.task_key == "r2v"
+                    if is_r2v_like(seg.task_key)
                     else []
                 )
-                positive_prompt = reinforce_ref_chain_prompt(
-                    positive_prompt,
-                    chained=is_continuity_active(plan, seg),
-                    ref_indices=ref_idxs,
-                    video_indices=vid_idxs,
-                    audio_indices=audio_idxs,
-                )
+                if seg.task_key == "m2v":
+                    positive_prompt = reinforce_m2v_prompt(
+                        positive_prompt,
+                        ref_indices=ref_idxs,
+                        video_indices=vid_idxs,
+                        audio_indices=audio_idxs,
+                    )
+                else:
+                    positive_prompt = reinforce_ref_chain_prompt(
+                        positive_prompt,
+                        chained=is_continuity_active(plan, seg),
+                        ref_indices=ref_idxs,
+                        video_indices=vid_idxs,
+                        audio_indices=audio_idxs,
+                    )
         elif seg.task_key == "v2v":
             positive_prompt = reinforce_v2v_prompt(positive_prompt)
         elif seg.task_key == "rv2v":
@@ -455,8 +516,8 @@ def execute_director_plan_core(
             plan, seg, clip_frames=clip_frames, ctx_w=ctx_w, ctx_h=ctx_h, prev_tail=prev_tail,
         )
 
-        if seg.task_key in {"i2v", "r2v", "v2v", "rv2v"} and (ref_images or ref_videos or ref_audios) and audio_vae is None:
-            raise ValueError("i2v/r2v/v2v/rv2v / reference conditioning requires audio_vae input.")
+        if seg.task_key in {"i2v", "r2v", "m2v", "v2v", "rv2v"} and (ref_images or ref_videos or ref_audios) and audio_vae is None:
+            raise ValueError("i2v/r2v/m2v/v2v/rv2v / reference conditioning requires audio_vae input.")
 
         positive, negative, latent, task_hint = run_minimax_conditioning(
             clip=clip,
@@ -530,6 +591,10 @@ def execute_director_plan_core(
         if decoded.shape[0] > target_len:
             decoded = decoded[:target_len]
 
+        # 连贯去帧：先去掉与上镜尾高度相似的连续帧，再做链式首帧锁定（避免把锁定帧再裁掉）
+        if prev_tail is not None and getattr(plan, "seam_dedupe_enabled", False):
+            decoded, audio_dict, _dropped = _apply_seam_dedupe(decoded, seg, audio_dict)
+
         # MiniMax keyframes only condition — pin opening pixels to prev last frame.
         if prev_tail is not None and is_continuity_active(plan, seg):
             decoded = lock_chain_opening_frame(
@@ -549,7 +614,7 @@ def execute_director_plan_core(
         save_segment_cache(node_id, seg, plan, chunk)
         completed_outputs[seg.index] = chunk
 
-        if seg.task_key in {"t2v", "i2v", "r2v", "fl2v", "v2v", "rv2v"} and chunk.shape[0] >= 1:
+        if seg.task_key in {"t2v", "i2v", "r2v", "m2v", "fl2v", "v2v", "rv2v"} and chunk.shape[0] >= 1:
             try:
                 # Cap JPEG preview count — encoding every frame stalls after decode on weak CPUs.
                 idxs = _preview_frame_indices(int(chunk.shape[0]), max_frames=24)
@@ -601,6 +666,7 @@ def execute_director_plan_core(
         cached = load_segment_cache(node_id, seg, plan)
         if cached is not None:
             cached = cached.float()
+            cached, _, _ = _apply_seam_dedupe(cached, seg, None)
             completed_outputs[seg.index] = cached
             reports.append(
                 f"Segment {seg.index + 1}/{len(all_segments)}: loaded from cache ({cached.shape[0]} frames)"
@@ -615,6 +681,7 @@ def execute_director_plan_core(
                 f"Segment {seg.index + 1} is not selected and has no valid cache or source "
                 "frames to passthrough. Include it in「选择运行」, or switch export to「分段导出」."
             )
+        fill, _, _ = _apply_seam_dedupe(fill, seg, None)
         completed_outputs[seg.index] = fill
         passthrough_indices.append(seg.index)
         reports.append(

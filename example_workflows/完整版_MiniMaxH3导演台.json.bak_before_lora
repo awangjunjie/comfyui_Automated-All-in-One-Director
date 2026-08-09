@@ -1,8 +1,8 @@
 {
   "id": "3ff723ed-49f4-47a5-8ece-8d39dec870ac",
   "revision": 0,
-  "last_node_id": 19,
-  "last_link_id": 22,
+  "last_node_id": 18,
+  "last_link_id": 21,
   "nodes": [
     {
       "id": 1,
@@ -613,7 +613,7 @@
         12,
         2.0
       ],
-      "title": "H3 导演工台（完整版）"
+      "title": "官方 MiniMax H3 导演台（完整版）"
     },
     {
       "id": 6,
@@ -1126,7 +1126,7 @@
           "localized_name": "model",
           "name": "model",
           "type": "MODEL",
-          "link": 22
+          "link": 18
         },
         {
           "localized_name": "sage_attention",
@@ -1186,7 +1186,7 @@
       "title": "导演台 · 使用流程",
       "properties": {},
       "widgets_values": [
-        "## 导演台使用流程\n\n节点名：**MiniMax H3 导演台（完整版）**  \n展开节点下方 **导演台** 面板即可编排。\n\n提示词规范已对齐官方 h3-prompt-writing（中文字段输出）。\n\n### 推荐总流程\n1. 选好任务类型（t2v / fl2v / fl_chain / r2v / v2v / rv2v）与模型\n2. **连续性**：填角色 / 场景 / 道具\n3. **全局声景**：写风格、声景、配乐（可选）\n4. **提示词导演**：选风格 Skill → 故事 → 分镜提示词\n5. **参考图导演 / 首尾帧导演**：出参考图或首尾帧并注入（本地可切换 SDXL / Z-Image-Turbo / FLUX，见「文生图 · 模型切换说明」）\n6. 时间线微调 → **Queue**\n\n### ③ 提示词导演（重点）\n1. 本地 GGUF 或云端 API\n2. **风格 Skill**：通用 / 极简产品广告 / 3D动画短片 / 剪纸定格 / 品牌宣传 / MV歌词 / 双人游戏开场 / 纸拼贴 / 手绘+实拍\n3. 故事 → 自动分镜 / N组分镜（只写分镜）→（可选）**故事→连续性/声景** → 人物场景→参考图 / 内容→首尾帧（fl2v / fl_chain）；已有简述用「按组扩写」（已完整则跳过）\n4. 对白必须写清语气；全局布局每镜回扣\n5. 模式：t2v→T2VA，i2v→I2VA，fl2v/fl_chain→FL2VA，r2v/v2v/rv2v→**REF2VA**（六段式）\n\n### 任务速查\n| 任务 | MODE | 输出 |\n|------|------|------|\n| t2v | T2VA | 三字段中文 |\n| fl2v | FL2VA | 对齐句+三字段 |\n| fl_chain | FL2VA | 同上；上镜末帧接力下镜首帧 |\n| r2v/v2v/rv2v | REF2VA | 主体定义…六段 |\n\n### 链式连贯（开关）\n- 输出栏勾选 **链式连贯**（t2v / fl2v / i2v / r2v；`fl_chain` 常开）\n- 开启后：上镜末帧 → 下镜首帧；请按顺序 Queue\n- t2v：第 1 组纯文生；第 2 组起注入上镜末帧作首帧\n- i2v/r2v：第 1 组可不传首帧；开启后图片1 被占用，用户参考图剩 8 槽（图片2–9）\n\n风格 Skill 为官方 skills 精简版：https://github.com/MiniMax-AI/MiniMax-H3/tree/main/skills\n\n---\n## 加速节点\n`UNET → MiniMax LoRA → SageAttention → TE-Speed → EasyCache → 导演台`\n- Sage：`sageattn_qk_int8_pv_fp16_cuda` 或 auto；allow_compile=false\n- TE-Speed：默认 0.12；0 关闭\n- EasyCache：阈值 0.2；0 关闭\n"
+        "## 导演台使用流程\n\n节点名：**MiniMax H3 导演台（完整版）**  \n展开节点下方 **导演台** 面板即可编排。\n\n提示词规范已对齐官方 h3-prompt-writing（中文字段输出）。\n\n### 推荐总流程\n1. 选好任务类型（t2v / fl2v / fl_chain / r2v / v2v / rv2v）与模型\n2. **连续性**：填角色 / 场景 / 道具\n3. **全局声景**：写风格、声景、配乐（可选）\n4. **提示词导演**：选风格 Skill → 故事 → 分镜提示词\n5. **参考图导演 / 首尾帧导演**：出参考图或首尾帧并注入（本地可切换 SDXL / Z-Image-Turbo / FLUX，见「文生图 · 模型切换说明」）\n6. 时间线微调 → **Queue**\n\n### ③ 提示词导演（重点）\n1. 本地 GGUF 或云端 API\n2. **风格 Skill**：通用 / 极简产品广告 / 3D动画短片 / 剪纸定格 / 品牌宣传 / MV歌词 / 双人游戏开场 / 纸拼贴 / 手绘+实拍\n3. 故事 → 自动分镜 / N组分镜（只写分镜）→（可选）**故事→连续性/声景** → 人物场景→参考图 / 内容→首尾帧（fl2v / fl_chain）；已有简述用「按组扩写」（已完整则跳过）\n4. 对白必须写清语气；全局布局每镜回扣\n5. 模式：t2v→T2VA，i2v→I2VA，fl2v/fl_chain→FL2VA，r2v/v2v/rv2v→**REF2VA**（六段式）\n\n### 任务速查\n| 任务 | MODE | 输出 |\n|------|------|------|\n| t2v | T2VA | 三字段中文 |\n| fl2v | FL2VA | 对齐句+三字段 |\n| fl_chain | FL2VA | 同上；上镜末帧接力下镜首帧 |\n| r2v/v2v/rv2v | REF2VA | 主体定义…六段 |\n\n### 链式连贯（开关）\n- 输出栏勾选 **链式连贯**（t2v / fl2v / i2v / r2v；`fl_chain` 常开）\n- 开启后：上镜末帧 → 下镜首帧；请按顺序 Queue\n- t2v：第 1 组纯文生；第 2 组起注入上镜末帧作首帧\n- i2v/r2v：第 1 组可不传首帧；开启后图片1 被占用，用户参考图剩 8 槽（图片2–9）\n\n风格 Skill 为官方 skills 精简版：https://github.com/MiniMax-AI/MiniMax-H3/tree/main/skills\n\n---\n## 加速节点\n`UNET → SageAttention → TE-Speed → EasyCache → 导演台`\n- Sage：`sageattn_qk_int8_pv_fp16_cuda` 或 auto；allow_compile=false\n- TE-Speed：默认 0.12；0 关闭\n- EasyCache：阈值 0.2；0 关闭\n"
       ],
       "color": "#223",
       "bgcolor": "#335"
@@ -1214,67 +1214,6 @@
       ],
       "color": "#432",
       "bgcolor": "#653"
-    },
-    {
-      "id": 19,
-      "type": "LoraLoaderModelOnly",
-      "pos": [
-        -740.0,
-        -80.0
-      ],
-      "size": [
-        420,
-        82
-      ],
-      "flags": {},
-      "order": 21,
-      "mode": 0,
-      "inputs": [
-        {
-          "localized_name": "模型",
-          "name": "model",
-          "type": "MODEL",
-          "link": 18
-        },
-        {
-          "localized_name": "LoRA名称",
-          "name": "lora_name",
-          "type": "COMBO",
-          "widget": {
-            "name": "lora_name"
-          },
-          "link": null
-        },
-        {
-          "localized_name": "模型强度",
-          "name": "strength_model",
-          "type": "FLOAT",
-          "widget": {
-            "name": "strength_model"
-          },
-          "link": null
-        }
-      ],
-      "outputs": [
-        {
-          "localized_name": "模型",
-          "name": "MODEL",
-          "type": "MODEL",
-          "links": [
-            22
-          ]
-        }
-      ],
-      "title": "MiniMax H3 Turbo LoRA（FL2V / 建议4步）",
-      "properties": {
-        "Node name for S&R": "LoraLoaderModelOnly",
-        "cnr_id": "comfy-core",
-        "ver": "0.20.1"
-      },
-      "widgets_values": [
-        "MiniMax-H3/minimax_h3_fl2v_lightx2v_turbo_4step_v0.1_comfy_resized_avg_rank_21_bf16.safetensors",
-        1.0
-      ]
     }
   ],
   "links": [
@@ -1394,7 +1333,7 @@
       18,
       1,
       0,
-      19,
+      16,
       0,
       "MODEL"
     ],
@@ -1421,14 +1360,6 @@
       5,
       33,
       "VAE"
-    ],
-    [
-      22,
-      19,
-      0,
-      16,
-      0,
-      "MODEL"
     ]
   ],
   "groups": [

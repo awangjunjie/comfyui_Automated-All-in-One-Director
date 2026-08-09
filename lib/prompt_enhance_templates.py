@@ -31,10 +31,13 @@ _DEFAULT_USER_TEMPLATE = (
 )
 
 _TEMPLATE_ALIASES = {"mv2v": "v2v", "vrc2v": "rv2v"}
-_TASKS_REQUIRE_IMAGE_SLOTS = frozenset({"rv2v", "r2v", "r2i", "vi2v"})
+_TASKS_REQUIRE_IMAGE_SLOTS = frozenset({"rv2v", "r2v", "m2v", "r2i", "vi2v"})
 
 
 def _task_key(task_type: str) -> str:
+    # m2v (motion transfer) shares r2v enhancement templates / ReferenceToVideo slots.
+    if task_type == "m2v":
+        return "r2v"
     return _TEMPLATE_ALIASES.get(task_type, task_type)
 
 
