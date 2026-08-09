@@ -29,11 +29,16 @@ def is_gen_task_key(task_key: str) -> bool:
 
 def is_gen_timeline(timeline: dict, task_key: str) -> bool:
     mode = str(timeline.get("timelineMode") or "").lower()
+    key = resolve_task_key(task_key) if task_key else ""
     if mode in ("gen_blank", "gen_image", "image_batch", "prompt_batch", "fl2v"):
+        return True
+    # m2v/t2v/i2v/r2v are generation tasks even if UI left timelineMode="video"
+    # (m2v reuses the media track as motion source — must NOT use the v2v edit plan).
+    if key in GEN_BLANK_KEYS:
         return True
     if mode == "video":
         return False
-    return is_gen_task_key(task_key)
+    return is_gen_task_key(key)
 
 
 def is_prompt_batch_timeline(timeline: dict, task_key: str) -> bool:
@@ -81,6 +86,33 @@ def _timeline_has_motion_video(timeline: dict) -> bool:
     return False
 
 
+def _motion_track_frame_count(timeline: dict) -> int:
+    """Media-track length for m2v — prefer source/frameMap over gen totalFrames."""
+    from ..lib.video_io import (
+        deleted_source_ranges,
+        logical_frame_map,
+        video_clips_from_timeline,
+    )
+
+    frame_map = logical_frame_map(timeline)
+    if frame_map:
+        return len(frame_map)
+
+    video = timeline.get("video") or {}
+    source_count = int(video.get("sourceFrameCount") or 0)
+    if source_count > 0:
+        removed = sum(end - start for start, end in deleted_source_ranges(timeline))
+        return max(0, source_count - removed)
+
+    clips = video_clips_from_timeline(timeline)
+    if clips:
+        total = sum(int(c.get("sourceFrameCount") or 0) for c in clips if isinstance(c, dict))
+        if total > 0:
+            return total
+
+    return int(timeline.get("totalFrames") or 0)
+
+
 def _fit_ref_video_frames(clip: torch.Tensor, num_frames: int) -> torch.Tensor:
     """Trim or pad (repeat last frame) to the generation length."""
     target = max(1, int(num_frames))
@@ -112,8 +144,14 @@ def _load_m2v_motion_videos(
         if src_len <= 0:
             src_len = num_frames
         src_end = max(src_start + 1, src_start + src_len)
+        # Override gen-sum totalFrames so load_timeline_segment can reach the full motion clip.
+        track_total = _motion_track_frame_count(timeline)
+        load_tl = timeline
+        if track_total > 0 and int(timeline.get("totalFrames") or 0) != track_total:
+            load_tl = dict(timeline)
+            load_tl["totalFrames"] = track_total
         try:
-            clip = load_timeline_segment(timeline, src_start, src_end)
+            clip = load_timeline_segment(load_tl, src_start, src_end)
         except Exception as exc:
             raise ValueError(
                 f"动作迁移无法从媒体轨加载动作视频 [{src_start}:{src_end}]：{exc}"
@@ -469,6 +507,10 @@ def build_gen_director_plan(
             )
 
         seg_task_key = resolve_task_key(seg_task)
+        if seg_task_key == "m2v":
+            from .plan import FIXED_M2V_PROMPT
+
+            seg_prompt = FIXED_M2V_PROMPT
         if not seg_prompt:
             log.warning("gen segment #%d has empty prompt", idx + 1)
         else:
@@ -525,9 +567,34 @@ def build_gen_director_plan(
                     f"动作迁移 (m2v) 第 {idx + 1} 组缺少动作视频："
                     "请在媒体轨上传单路动作/运镜视频（可预览、裁切、均分）。"
                 )
+            # 均分后部分卡未贴图：继承前面已有人物/场景参考
+            if not seg_refs:
+                for prev_start, prev_end, prev_data in reversed(segment_ranges[:idx]):
+                    del prev_start, prev_end
+                    inherited = _load_refs(prev_data.get("refs") or [])
+                    if inherited:
+                        seg_refs = inherited
+                        log.info(
+                            "m2v segment #%d: inherited %d ref image(s) from an earlier card",
+                            idx + 1,
+                            len(seg_refs),
+                        )
+                        break
+            if not seg_refs and global_refs:
+                seg_refs = list(global_refs)
             if not seg_refs:
                 raise ValueError(
                     f"动作迁移 (m2v) 第 {idx + 1} 组缺少参考图：请上传图片1（角色/外观）。"
+                )
+            gen_len = max(5, int(end) - int(start))
+            if gen_len > 160:
+                log.warning(
+                    "m2v segment #%d is %d frames (≈%.1fs) — long single chunks often "
+                    "drift back to the motion-video identity after a few seconds. "
+                    "Prefer ~124-frame (≈5s) equal-split segments.",
+                    idx + 1,
+                    gen_len,
+                    gen_len / 24.0,
                 )
         elif (is_r2v_like(seg_task_key) or seg_task_key in ("r2i", "i2v")) and not seg_refs and not seg_ref_videos and not seg_ref_audios:
             log.warning(

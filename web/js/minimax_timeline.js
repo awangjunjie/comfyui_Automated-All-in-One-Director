@@ -17,6 +17,7 @@ import {
     isR2vLikeTask,
     isVideoBatchTask,
     MAX_GEN_FRAMES,
+    M2V_RECOMMENDED_CHUNK_FRAMES,
     MAX_REFERENCE_AUDIOS,
     MAX_REFERENCE_IMAGES,
     MINIMAX_CANVAS_MULTIPLE,
@@ -47,6 +48,7 @@ import {
     getImageBatchUiHeight,
     migrateRefsForChainContinuity,
     mountImageBatchPanel,
+    FIXED_M2V_PROMPT,
     normalizeImageBatchSegments,
     renderImageBatchGroups,
     setImageBatchPreview,
@@ -170,6 +172,10 @@ const HIDDEN_WIDGETS = [
 
 const DIRECTOR_WIDGET_LABELS = {
     seed: "种子 seed",
+    steps: "采样步数 steps",
+    nfe8_accel_enable: "8步音视频加速",
+    nfe8_lora_name: "8步加速 LoRA",
+    nfe8_lora_strength: "8步加速 LoRA 强度",
     clear_vram_between_segments: "段间清理显存",
     export_source_images: "输出原片对比 source_images",
     local_director_enable: "提示词导演（Queue 时扩写）",
@@ -201,7 +207,7 @@ function applyDirectorWidgetLabels(node) {
 /** Widgets that stay visible when their BDGROUP is collapsed (keep minimal). */
 const GROUP_PINNED_WIDGETS = {
     bd_grp_sample: ["seed"],
-    bd_grp_advanced: ["steps"],
+    bd_grp_advanced: ["steps", "nfe8_accel_enable", "nfe8_lora_name", "nfe8_lora_strength"],
     bd_grp_studio: [],
     bd_grp_image_dir: [],
     bd_grp_perf: [],
@@ -1369,19 +1375,28 @@ class MiniMaxH3DirectorEditor {
             const batchBody = { ...this.timeline };
             stripTimelineContinuityRootFields(batchBody);
             stripTimelineEphemeralFields(batchBody);
+            const isM2vPayload = isMotionTransferTask(taskKey);
+            // m2v：totalFrames 必须是媒体轨动作源长度；生成帧数在各段 frameCount。
+            // 若写成 sum(frameCount)，后端 logical_frame_count 会优先采用它，动作视频被截短。
+            const mediaTotal = typeof this.getTotalFrames === "function"
+                ? this.getTotalFrames()
+                : (parseInt(this.timeline.totalFrames, 10) || 0);
+            const batchTotalFrames = isM2vPayload && mediaTotal > 0
+                ? mediaTotal
+                : sumFrameCounts(this.timeline.segments);
             return {
                 ...batchBody,
                 version: 5,
                 timelineMode: "prompt_batch",
                 editMode: this.timeline.editMode === "global" ? "global" : "segment",
-                totalFrames: sumFrameCounts(this.timeline.segments),
+                totalFrames: batchTotalFrames,
                 frameRate: this.getFrameRate(),
                 width: this.timeline.output?.width,
                 height: this.timeline.output?.height,
                 global: {
                     ...this.timeline.global,
                     taskType: this.globalTask?.value || this.taskTypeWidget?.value || "",
-                    prompt: this.timeline.global?.prompt || "",
+                    prompt: isM2vPayload ? FIXED_M2V_PROMPT : (this.timeline.global?.prompt || ""),
                     ...(i2iSrc?.width > 0 ? { sourceWidth: i2iSrc.width, sourceHeight: i2iSrc.height } : {}),
                 },
                 output,
@@ -1389,14 +1404,14 @@ class MiniMaxH3DirectorEditor {
                     const fc = s.frameCount ?? s.length ?? 1;
                     // m2v：length/start 保留媒体轨动作源区间；frameCount 才是生成帧数
                     const trackLen = parseInt(s.length, 10);
-                    const isM2v = isMotionTransferTask(taskKey);
+                    const isM2v = isM2vPayload;
                     return {
                         id: s.id,
                         start: s.start ?? 0,
                         length: isM2v && Number.isFinite(trackLen) && trackLen > 0 ? trackLen : fc,
                         frameCount: fc,
                         durationSec: s.durationSec,
-                        prompt: s.prompt || "",
+                        prompt: isM2v ? FIXED_M2V_PROMPT : (s.prompt || ""),
                         negativePrompt: s.negativePrompt || "",
                         taskType: s.taskType || "",
                         label: s.label || "",
@@ -1513,6 +1528,17 @@ class MiniMaxH3DirectorEditor {
     /** Pull latest prompt text from batch cards into timeline.segments (before Queue). */
     harvestBatchPrompts() {
         if (!this.isImageBatch?.() || !this.batchList) return;
+        if (this.isM2vBatch?.()) {
+            this.timeline.global = this.timeline.global || {};
+            this.timeline.global.prompt = FIXED_M2V_PROMPT;
+            for (const seg of this.timeline.segments || []) {
+                if (seg) {
+                    seg.prompt = FIXED_M2V_PROMPT;
+                    seg.negativePrompt = "";
+                }
+            }
+            return;
+        }
         const cards = this.batchList.querySelectorAll(".h3d-batch-card");
         cards.forEach((card, i) => {
             const seg = this.timeline.segments?.[i];
@@ -1727,7 +1753,12 @@ class MiniMaxH3DirectorEditor {
                 </label>
                 <span class="h3d-meta" data-r="seam-judge-label">判断帧数</span>
                 <input type="number" class="h3d-num" data-r="seam-judge-n" min="2" max="32" value="8" style="width:48px" title="每侧取多少帧做相似度判断">
-            </span>`;
+            </span>
+            <label data-r="nfe8-accel-inline"
+                  style="display:inline-flex;align-items:center;gap:6px;padding:2px 8px;border:1px solid #5a6a3a;border-radius:3px;background:rgba(90,120,40,.18);color:#d8e8b0;font-weight:600"
+                  title="Tutu 20→8 NFE：Euler + 固定 ManualSigmas + shift 12/3。勾选后会自动选中 *20to8* / tutu-t8* LoRA（也可在「高级采样」里改）。适合 t2v/i2v/fl2v（FL2VA）">
+                <input type="checkbox" data-r="nfe8-accel-cb">8步音视频加速（Tutu）
+            </label>`;
         this.mainBody.appendChild(outputBar);
 
         const bottom = document.createElement("div");
@@ -1923,6 +1954,7 @@ class MiniMaxH3DirectorEditor {
         this.segmentContinuityOverlap = this.root.querySelector('[data-r="segment-continuity-overlap"]');
         this.seamDedupeInline = this.root.querySelector('[data-r="seam-dedupe-inline"]');
         this.seamDedupeCb = this.root.querySelector('[data-r="seam-dedupe-cb"]');
+        this.nfe8AccelCb = this.root.querySelector('[data-r="nfe8-accel-cb"]');
         this.seamJudgeInput = this.root.querySelector('[data-r="seam-judge-n"]');
         this.seamJudgeLabel = this.root.querySelector('[data-r="seam-judge-label"]');
         // 剪辑栏旧版控件已移除；清掉缓存 DOM 残留
@@ -2120,6 +2152,7 @@ class MiniMaxH3DirectorEditor {
                 if (!this.timeline.output) this.timeline.output = {};
                 this.timeline.output.seamDedupeEnabled = !!cb.checked;
                 this.updateSeamDedupeUI();
+        this.updateNfe8AccelUI?.();
                 this.commit();
                 this.flushTimelineSync();
             };
@@ -2132,6 +2165,7 @@ class MiniMaxH3DirectorEditor {
                 const n = resolveSeamJudgeFrames({ seamJudgeFrames: input.value });
                 this.timeline.output.seamJudgeFrames = n;
                 this.updateSeamDedupeUI();
+        this.updateNfe8AccelUI?.();
                 this.commit();
                 this.flushTimelineSync();
             };
@@ -2992,10 +3026,22 @@ class MiniMaxH3DirectorEditor {
         const isR2v = isBatch && taskKey === "r2v";
         const isM2v = isBatch && isMotionTransferTask(taskKey);
         // fl2v / r2v / m2v use the main timeline track; other batch + gen hide it.
-        // 切入动作迁移时默认整局（单视频）；用户可再切回分镜。
-        if (isM2v && this.timeline && this._lastTaskKey !== "m2v") {
+        // 切入动作迁移时默认整局（单视频），并进入媒体轨步骤；用户可再切回分镜。
+        const enteredM2v = isM2v && this.timeline && this._lastTaskKey !== "m2v";
+        if (enteredM2v) {
             this.timeline.editMode = "global";
             this.selectedIndex = 0;
+            this.timeline.global = this.timeline.global || {};
+            this.timeline.global.prompt = FIXED_M2V_PROMPT;
+            // 长动作视频切入 m2v 时自动切段；关闭链式连贯以免占掉人物图
+            this.timeline.output = this.timeline.output || {};
+            this.timeline.output.continuityEnabled = false;
+            this.timeline.output.continuity_enabled = false;
+            try {
+                this._ensureM2vChunkedSegments({ silent: !this.hasVideo() });
+            } catch {
+                /* ignore */
+            }
         }
         this._lastTaskKey = taskKey;
         const hideTimeline = (isBatch && !isR2v && !isM2v) || isGen;
@@ -3020,14 +3066,18 @@ class MiniMaxH3DirectorEditor {
             // Re-apply fl2v-specific disables after clearing batch disables.
             setFl2vToolbar(this, true);
         } else if (isM2v) {
-            // 动作迁移：媒体轨上传/预览/分割/均分；卡片只管参考图
+            // 动作迁移：媒体轨上传/预览/分割/均分；卡片只管参考图；始终只保留 1 路视频
             setFl2vToolbar(this, false);
             setR2vToolbar(this, false);
             setToolbarDisabledForBatch(this, false);
             this._applyM2vToolbar();
+            if ((this.timeline.videoClips || []).length > 1) {
+                this.timeline.videoClips = [this.timeline.videoClips[0]];
+                this._syncPrimaryVideoFromClips?.(this.getFrameMap?.() || []);
+            }
             if (this.btnVideo) {
                 this.btnVideo.textContent = "上传动作视频";
-                this.btnVideo.title = "上传单路动作/运镜参考视频（可预览、裁切、均分分镜）";
+                this.btnVideo.title = "上传单路动作视频（可替换；上传后拖拽裁切或均分分镜）";
                 this.btnVideo.classList.remove("hidden", "h3d-disabled");
                 this.btnVideo.disabled = false;
             }
@@ -3102,6 +3152,7 @@ class MiniMaxH3DirectorEditor {
         }
         this.updateSegmentContinuityUI();
         this.updateSeamDedupeUI();
+        this.updateNfe8AccelUI?.();
         this.updateVideoNameLabel();
         if (isFl2v) {
             // Keep 整局/分镜 choice; default to 分镜 only when unset.
@@ -3123,12 +3174,16 @@ class MiniMaxH3DirectorEditor {
             this.updateModeUI();
             this.updateSelectionUI();
         }
-        // t2v/t2i: hide 参考图导演; i2v/r2v/fl2v: show
+        // t2v/t2i/m2v: hide 参考图导演; m2v 同时隐藏提示词导演
         updateImageDirectorVisibility(this);
         syncLocalDirectorForTask(this);
         // Hide binder「媒体轨」step when task has no preview/timeline.
         this.updateBinderMediaStep?.();
         this.syncBinderContent?.();
+        // 刚切入动作迁移：默认打开「动作视频」步骤
+        if (enteredM2v && typeof this.showBinderStep === "function") {
+            this.showBinderStep("media");
+        }
         this.updateDomWidgetHeight();
         this.syncOutputUIFromTimeline();
         this.seekBar.max = Math.max(0, this.getTotalFrames() - 1);
@@ -3957,6 +4012,7 @@ class MiniMaxH3DirectorEditor {
         }
         if (this.isImageBatch?.()) this.renderImageBatchGroups?.();
         this.updateSeamDedupeUI();
+        this.updateNfe8AccelUI?.();
         this.updateVideoNameLabel();
         this.updateDomWidgetHeight?.();
         this.commit();
@@ -3987,6 +4043,8 @@ class MiniMaxH3DirectorEditor {
     }
 
     getDisplayPrompt(seg) {
+        // m2v：提示词固定且不在媒体轨展示
+        if (this.isM2vBatch?.()) return "";
         if (this.isGlobalMode()) return this.timeline.global?.prompt || "";
         return seg?.prompt || "";
     }
@@ -4154,6 +4212,7 @@ class MiniMaxH3DirectorEditor {
         }
         // 与链式连贯同刷新；即使当前任务不支持链式连贯也要刷新去帧显隐
         this.updateSeamDedupeUI();
+        this.updateNfe8AccelUI?.();
     }
 
     /** Apply ResolutionSelector → fixed width/height on timeline + node widgets. */
@@ -4519,6 +4578,13 @@ class MiniMaxH3DirectorEditor {
         if (this.seamDedupeCb) {
             this.timeline.output.seamDedupeEnabled = !!this.seamDedupeCb.checked;
         }
+
+        if (this.nfe8AccelCb) {
+            this.nfe8AccelCb.onchange = () => {
+                this.setNfe8AccelEnabled(!!this.nfe8AccelCb.checked);
+            };
+        }
+
         if (this.seamJudgeInput) {
             this.timeline.output.seamJudgeFrames = resolveSeamJudgeFrames({
                 seamJudgeFrames: this.seamJudgeInput.value,
@@ -5023,6 +5089,66 @@ class MiniMaxH3DirectorEditor {
         }
     }
 
+    /** 把人物/场景/音频参考复制到仍为空的素材卡（均分后常用）。 */
+    _propagateM2vRefsToAllSegments() {
+        if (!this.isM2vBatch()) return;
+        const segs = this.timeline.segments || [];
+        if (segs.length < 2) return;
+        const refCount = (s) => (s.refs || []).filter((r) => r?.imageFile || r?.imageB64).length;
+        let donor = segs[0];
+        for (const s of segs) {
+            if (refCount(s) > refCount(donor)) donor = s;
+        }
+        if (!refCount(donor)) return;
+        const refs = JSON.parse(JSON.stringify(donor.refs || []));
+        const audios = JSON.parse(JSON.stringify(donor.refAudios || []));
+        for (const s of segs) {
+            if (refCount(s) === 0) s.refs = JSON.parse(JSON.stringify(refs));
+            if (!(s.refAudios || []).length && audios.length) {
+                s.refAudios = JSON.parse(JSON.stringify(audios));
+            }
+        }
+    }
+
+    /**
+     * 长动作视频自动均分到约 5s/段，减轻「前几秒像迁移、后半段漂回原片」。
+     * 仅在整轨单段且明显超长时触发；用户已手动分镜则不改。
+     */
+    _ensureM2vChunkedSegments({ silent = false } = {}) {
+        if (!this.isM2vBatch() || !this.hasVideo()) return false;
+        const total = this.getTotalFrames();
+        const chunk = M2V_RECOMMENDED_CHUNK_FRAMES;
+        const segs = this.timeline.segments || [];
+        if (total <= chunk + 20) {
+            this._propagateM2vRefsToAllSegments();
+            return false;
+        }
+        if (segs.length !== 1) {
+            this._propagateM2vRefsToAllSegments();
+            return false;
+        }
+        const only = segs[0];
+        const len = Math.max(1, parseInt(only.length, 10) || total);
+        if (len <= chunk + 20) {
+            this._propagateM2vRefsToAllSegments();
+            return false;
+        }
+        const n = Math.min(64, Math.max(2, Math.ceil(total / chunk)));
+        if (this.equalCountInput) this.equalCountInput.value = String(n);
+        this.equalSplit();
+        this._propagateM2vRefsToAllSegments();
+        if (!silent) {
+            const sec = (chunk / Math.max(0.001, this.getFrameRate())).toFixed(1);
+            this.showBdMessage?.(
+                "动作迁移 · 已自动分镜",
+                `动作视频约 ${(total / Math.max(0.001, this.getFrameRate())).toFixed(1)}s，`
+                + `已均分为 ${n} 段（每段约 ${sec}s）。`
+                + `长视频整段生成后半段容易漂回原片人物；分镜后请确认每卡都有人物图再 Queue。`,
+            );
+        }
+        return true;
+    }
+
     /** 动作迁移工具条：上传单路动作视频 + 分割/均分/删除分段（预览走媒体轨舞台）。 */
     _applyM2vToolbar() {
         const showBtns = [
@@ -5060,6 +5186,7 @@ class MiniMaxH3DirectorEditor {
             }
         }
         this.updateSeamDedupeUI();
+        this.updateNfe8AccelUI?.();
     }
 
     /** 分镜连贯去帧：与「链式连贯」同一任务范围（可并存、可同时开）。 */
@@ -5149,6 +5276,7 @@ class MiniMaxH3DirectorEditor {
                     if (!this.timeline.output) this.timeline.output = {};
                     this.timeline.output.seamDedupeEnabled = !!this.seamDedupeCb.checked;
                     this.updateSeamDedupeUI();
+        this.updateNfe8AccelUI?.();
                     this.commit();
                     this.flushTimelineSync();
                 };
@@ -5164,6 +5292,7 @@ class MiniMaxH3DirectorEditor {
                     seamJudgeFrames: this.seamJudgeInput.value,
                 });
                 this.updateSeamDedupeUI();
+        this.updateNfe8AccelUI?.();
                 this.commit();
                 this.flushTimelineSync();
             };
@@ -5174,6 +5303,103 @@ class MiniMaxH3DirectorEditor {
             };
         }
         return inline;
+    }
+
+
+    isNfe8AccelEnabled() {
+        const w = this.widget?.("nfe8_accel_enable");
+        if (w) return !!w.value;
+        return !!(this.timeline?.output?.nfe8AccelEnabled);
+    }
+
+    comboWidgetValues(widget) {
+        if (!widget) return [];
+        const opts = widget.options;
+        if (Array.isArray(opts?.values)) return opts.values;
+        if (Array.isArray(opts)) return opts;
+        if (Array.isArray(widget.values)) return widget.values;
+        return [];
+    }
+
+    pickDefaultNfe8LoraName() {
+        const loraW = this.widget?.("nfe8_lora_name");
+        const values = this.comboWidgetValues(loraW);
+        if (!values.length) return "";
+        const scored = [];
+        for (const raw of values) {
+            const name = String(raw || "");
+            if (!name || name === "none") continue;
+            const low = name.toLowerCase().replace(/\\/g, "/");
+            if (!/(20to8|tutu-t8|tutu.*nfe|nfe.*tutu)/i.test(low)) continue;
+            const stepM = /step0*(\d+)/i.exec(low);
+            const step = stepM ? parseInt(stepM[1], 10) : 0;
+            const tier = low.includes("20to8") ? 0 : (low.includes("tutu-t8") ? 1 : 2);
+            scored.push({ name, tier, step });
+        }
+        if (!scored.length) return "";
+        scored.sort((a, b) => (a.tier - b.tier) || (b.step - a.step) || a.name.localeCompare(b.name));
+        return scored[0].name;
+    }
+
+    ensureNfe8LoraSelected() {
+        const loraW = this.widget?.("nfe8_lora_name");
+        if (!loraW) return;
+        const cur = String(loraW.value || "").trim();
+        if (cur && cur !== "none") return;
+        const picked = this.pickDefaultNfe8LoraName();
+        if (!picked) return;
+        loraW.value = picked;
+        if (typeof loraW.callback === "function") {
+            try { loraW.callback(picked); } catch (_e) { /* ignore */ }
+        }
+        this.node?.setDirtyCanvas?.(true, true);
+    }
+
+    setNfe8AccelEnabled(on) {
+        const enabled = !!on;
+        this.timeline.output = this.timeline.output || {};
+        this.timeline.output.nfe8AccelEnabled = enabled;
+        const enW = this.widget?.("nfe8_accel_enable");
+        if (enW) enW.value = enabled;
+        if (enabled) {
+            const stepsW = this.widget?.("steps");
+            const samplerW = this.widget?.("sampler");
+            const schedW = this.widget?.("scheduler");
+            const svW = this.widget?.("shift_video");
+            const saW = this.widget?.("shift_audio");
+            if (stepsW) stepsW.value = 8;
+            if (samplerW) samplerW.value = "euler";
+            if (schedW) schedW.value = "simple";
+            if (svW) svW.value = 12.0;
+            if (saW) saW.value = 3.0;
+            this.ensureNfe8LoraSelected();
+        }
+        if (this.nfe8AccelCb) this.nfe8AccelCb.checked = enabled;
+        this.node?.setDirtyCanvas?.(true, true);
+        this.commit?.(false, { syncTimeline: true });
+        this.updateNfe8AccelUI?.();
+    }
+
+    updateNfe8AccelUI() {
+        this.nfe8AccelCb = this.root?.querySelector?.('[data-r="nfe8-accel-cb"]') || this.nfe8AccelCb;
+        const wrap = this.root?.querySelector?.('[data-r="nfe8-accel-inline"]');
+        // Show for video gen tasks; strongest fit is FL2VA (t2v/i2v/fl2v).
+        const key = resolveTaskKey(this.getTaskKey?.() || this.taskTypeWidget?.value || "");
+        const show = ["t2v", "i2v", "fl2v", "fl_chain", "r2v", "m2v"].includes(key);
+        if (wrap) {
+            wrap.classList.toggle("hidden", !show);
+            wrap.hidden = !show;
+            wrap.style.display = show ? "inline-flex" : "none";
+            if (show) {
+                wrap.style.fontWeight = "600";
+                wrap.style.color = "#d8e8b0";
+            }
+        }
+        if (this.nfe8AccelCb) {
+            const on = this.isNfe8AccelEnabled();
+            if (this.nfe8AccelCb.checked !== on) this.nfe8AccelCb.checked = on;
+            if (on) this.ensureNfe8LoraSelected?.();
+        }
     }
 
     updateSeamDedupeUI() {
@@ -5286,6 +5512,13 @@ class MiniMaxH3DirectorEditor {
     }
 
     pickAppendVideoFile() {
+        if (this.isM2vBatch?.()) {
+            this.showBdMessage(
+                "动作迁移",
+                "动作迁移只支持一条动作视频。请用「上传动作视频」替换；上传后可拖拽裁切或均分。",
+            );
+            return;
+        }
         if (!this.hasVideo()) {
             this.showBdMessage(
                 "追加视频",
@@ -5300,6 +5533,10 @@ class MiniMaxH3DirectorEditor {
     }
 
     async appendVideoFile(file) {
+        if (this.isM2vBatch?.()) {
+            // 动作迁移：追加即改为整轨替换（始终只保留 1 路）
+            return this.loadVideoFile(file);
+        }
         const btn = this.root.querySelector('[data-a="video-append"]');
         if (btn) { btn.disabled = true; btn.textContent = "上传中…"; }
         this.videoNameEl.textContent = `追加中: ${file.name}…`;
@@ -5350,7 +5587,10 @@ class MiniMaxH3DirectorEditor {
             this.videoNameEl.textContent = `加载失败: ${formatUploadError(err)}`;
             this._resetTimelineForReplaceUpload();
         } finally {
-            if (btn) { btn.disabled = false; btn.textContent = "上传视频"; }
+            if (btn) {
+                btn.disabled = false;
+                btn.textContent = this.isM2vBatch?.() ? "上传动作视频" : "上传视频";
+            }
         }
     }
 
@@ -5585,8 +5825,11 @@ class MiniMaxH3DirectorEditor {
         this.updateStageVisibility();
         this._syncStagePreview(0, { force: true });
         if (this.isM2vBatch()) {
-            if ((this.timeline.editMode || "global") !== "segment") {
-                this.timeline.editMode = "global";
+            // 长视频默认切成约 5s 分镜，避免整段迁移后半段漂回原片
+            if (!this._ensureM2vChunkedSegments({ silent: false })) {
+                if ((this.timeline.editMode || "global") !== "segment") {
+                    this.timeline.editMode = "global";
+                }
             }
             this.renderImageBatchGroups?.();
             applyWorkflowScope(this);
@@ -6156,6 +6399,10 @@ class MiniMaxH3DirectorEditor {
             this.genSplitAtFrame(frame);
             return;
         }
+        if (this.isM2vBatch?.() && !this.hasVideo()) {
+            this.showBdMessage("动作迁移", "请先上传一条动作视频，再分割/裁切。");
+            return;
+        }
         const total = this.getTotalFrames();
         if (frame <= MIN_SEG || frame >= total - MIN_SEG) return;
         const newSegs = [];
@@ -6180,6 +6427,7 @@ class MiniMaxH3DirectorEditor {
         if (this.isM2vBatch()) {
             this.timeline.editMode = "segment";
             this._syncM2vDurationsFromTrack({ preserveManual: false });
+            this._propagateM2vRefsToAllSegments();
             this.renderImageBatchGroups?.();
             applyWorkflowScope(this);
         }
@@ -6187,11 +6435,16 @@ class MiniMaxH3DirectorEditor {
         this.commit();
         this.updateSplitPointUI();
         this.updateSeamDedupeUI();
+        this.updateNfe8AccelUI?.();
     }
 
     equalSplit() {
         if (this.isGenMode()) {
             this.genEqualSplit();
+            return;
+        }
+        if (this.isM2vBatch?.() && !this.hasVideo()) {
+            this.showBdMessage("动作迁移", "请先上传一条动作视频，再均分分镜。");
             return;
         }
         const n = parseInt(this.equalCountInput?.value || "2", 10);
@@ -6219,6 +6472,7 @@ class MiniMaxH3DirectorEditor {
         if (this.isM2vBatch()) {
             this.timeline.editMode = "segment";
             this._syncM2vDurationsFromTrack({ preserveManual: false });
+            this._propagateM2vRefsToAllSegments();
             this.renderImageBatchGroups?.();
             applyWorkflowScope(this);
         }
@@ -6226,6 +6480,7 @@ class MiniMaxH3DirectorEditor {
         this.commit();
         this.updateSplitPointUI();
         this.updateSeamDedupeUI();
+        this.updateNfe8AccelUI?.();
     }
 
     /** Logical ranges for each video clip on the timeline. */
@@ -6504,6 +6759,7 @@ class MiniMaxH3DirectorEditor {
             this.updateSelectionUI();
             this.updateSplitPointUI();
             this.updateSeamDedupeUI();
+        this.updateNfe8AccelUI?.();
             this.scheduleRender();
             if (!fromQueue) {
                 this.setSmartSplitMessage(
@@ -6523,6 +6779,7 @@ class MiniMaxH3DirectorEditor {
             return { applied: 0, error: err };
         } finally {
             this.updateSeamDedupeUI();
+        this.updateNfe8AccelUI?.();
         }
     }
 
@@ -6619,6 +6876,7 @@ class MiniMaxH3DirectorEditor {
             this.updateSelectionUI();
             this.updateSplitPointUI();
             this.updateSeamDedupeUI();
+        this.updateNfe8AccelUI?.();
             const shotCount = data.shotCount ?? Math.max(0, newSegs.length);
             const warn = Array.isArray(data.warnings) && data.warnings.length
                 ? ` ${data.warnings[0]}`
@@ -6636,6 +6894,7 @@ class MiniMaxH3DirectorEditor {
                 btn.textContent = prevLabel || "智能分割";
             }
             this.updateSeamDedupeUI();
+        this.updateNfe8AccelUI?.();
         }
     }
 
@@ -6919,15 +7178,18 @@ class MiniMaxH3DirectorEditor {
         ctx.fillStyle = "#000";
         ctx.fillRect(startX, y0 + 1, pxWidth, h - 2);
         if (!this.hasVideo()) {
-            ctx.fillStyle = "#666";
-            ctx.font = "12px sans-serif";
-            ctx.textAlign = "center";
-            ctx.textBaseline = "middle";
-            ctx.fillText(
-                this.isFl2vMode() ? "点击「添加一组」" : "点击「上传视频」",
-                startX + pxWidth / 2,
-                y0 + h / 2,
-            );
+            // m2v：无视频时不在每段重复「上传」；整轨只提示一次
+            if (!this.isM2vBatch?.()) {
+                ctx.fillStyle = "#666";
+                ctx.font = "12px sans-serif";
+                ctx.textAlign = "center";
+                ctx.textBaseline = "middle";
+                ctx.fillText(
+                    this.isFl2vMode() ? "点击「添加一组」" : "点击「上传视频」",
+                    startX + pxWidth / 2,
+                    y0 + h / 2,
+                );
+            }
             ctx.restore();
             return;
         }
@@ -7188,15 +7450,13 @@ class MiniMaxH3DirectorEditor {
         this.ctx.fillStyle = "#12161c";
         this.ctx.fillRect(0, TRACK_Y, width, TRACK_H);
 
-        if (!segs.length && (this.isFl2vMode() || this.isR2vLikeBatch())) {
+        if (!segs.length && (this.isFl2vMode() || this.isR2vLikeBatch()) && !this.isM2vBatch()) {
             this.ctx.fillStyle = "#666";
             this.ctx.font = "12px sans-serif";
             this.ctx.textAlign = "center";
             this.ctx.textBaseline = "middle";
             this.ctx.fillText(
-                this.isM2vBatch()
-                    ? "点击「上传动作视频」或点此上传"
-                    : (this.isR2vBatch() ? "点击「添加素材组」" : "点击「添加一组」"),
+                this.isR2vBatch() ? "点击「添加素材组」" : "点击「添加一组」",
                 width / 2,
                 TRACK_Y + TRACK_H / 2,
             );
@@ -7243,7 +7503,7 @@ class MiniMaxH3DirectorEditor {
                 this.ctx.globalAlpha = 0.72;
             }
             this.drawSegmentThumbnails(this.ctx, seg, x0, pxW, TRACK_Y, TRACK_H);
-            if (!this.isFl2vMode() || seg.isStartFrame) {
+            if (!this.isM2vBatch?.() && (!this.isFl2vMode() || seg.isStartFrame)) {
                 this.drawPromptOverlay(this.ctx, seg, x0, pxW, TRACK_Y, TRACK_H);
             }
             const clipIdx = this.getSegmentClipIndex(seg);
@@ -7309,6 +7569,23 @@ class MiniMaxH3DirectorEditor {
                 const g = this._runCheckGeometry(seg, width);
                 this._drawSegmentRunCheck(g.boxX, g.boxY, runOn);
             }
+        }
+
+        // m2v：整轨只提示一次上传（不在每段重复）
+        if (this.isM2vBatch() && !this.hasVideo()) {
+            this.ctx.save();
+            this.ctx.fillStyle = "rgba(18,22,28,0.55)";
+            this.ctx.fillRect(0, TRACK_Y, width, TRACK_H);
+            this.ctx.fillStyle = "#c8ccd6";
+            this.ctx.font = "12px sans-serif";
+            this.ctx.textAlign = "center";
+            this.ctx.textBaseline = "middle";
+            this.ctx.fillText(
+                "点击「上传动作视频」（仅 1 路；上传后可拖拽裁切 / 均分）",
+                width / 2,
+                TRACK_Y + TRACK_H / 2,
+            );
+            this.ctx.restore();
         }
 
         // fl2v: dashed overlay for the region past the sampling window.

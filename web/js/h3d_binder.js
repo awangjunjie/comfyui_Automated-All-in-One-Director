@@ -37,6 +37,57 @@ export function editorNeedsMediaTrack(editor) {
     return true;
 }
 
+/** m2v：隐藏剧本设定；只保留素材 / 动作视频 / 出库。 */
+export function updateBinderStepCopy(editor) {
+    const root = editor?.root;
+    if (!root?.classList?.contains("h3d-binder")) return;
+    const isM2v = typeof editor.isM2vBatch === "function" && editor.isM2vBatch();
+    const rail = _q(root, '[data-r="h3d-step-rail"]');
+    const workbench = editor.workbench || _q(root, ".h3d-workbench");
+    const bibleBtn = rail?.querySelector('[data-step="bible"]');
+    const biblePanel = workbench && _q(workbench, '[data-r="h3d-panel-bible"]');
+    bibleBtn?.classList.toggle("hidden", !!isM2v);
+    if (biblePanel) biblePanel.classList.toggle("h3d-binder-panel-disabled", !!isM2v);
+    root.classList.toggle("h3d-binder-m2v", !!isM2v);
+    if (isM2v && root.dataset.h3dStep === "bible") {
+        if (typeof editor.showBinderStep === "function") editor.showBinderStep("media");
+        else root.dataset.h3dStep = "media";
+    }
+    const setStep = (step, span, em) => {
+        const btn = rail?.querySelector(`[data-step="${step}"]`);
+        if (!btn) return;
+        const s = btn.querySelector("span");
+        const e = btn.querySelector("em");
+        if (s) s.textContent = span;
+        if (e) e.textContent = em;
+    };
+    const setPanel = (step, title, sub) => {
+        const head = workbench && _q(workbench, `[data-r="h3d-panel-${step}"] .h3d-binder-head`);
+        if (!head) return;
+        const b = head.querySelector("b");
+        const sp = head.querySelector("span");
+        if (b) b.textContent = title;
+        if (sp) sp.textContent = sub;
+    };
+    if (isM2v) {
+        setStep("shots", "参考素材", "人物图 · 场景图 · 音频");
+        setStep("media", "动作视频", "上传 · 裁切 · 均分（必做）");
+        setStep("output", "成片出库", "分辨率 · 导出 · Queue");
+        setPanel("shots", "01 · 参考素材", "人物图 / 场景图 / 音频");
+        setPanel("media", "02 · 动作视频", "上传单路动作/运镜视频，可预览、裁切、均分");
+        setPanel("output", "03 · 成片出库", "分辨率、导出方式与运行进度");
+    } else {
+        setStep("bible", "剧本设定", "连续 · 声景 · 提示词");
+        setStep("shots", "分镜清单", "组 / 镜 / 提示词");
+        setStep("media", "媒体轨", "预览 · 分割 · 轨道");
+        setStep("output", "成片出库", "分辨率 · 导出 · 进度");
+        setPanel("bible", "01 · 剧本设定", "先写清楚角色 / 场景 / 声景，再进分镜");
+        setPanel("shots", "02 · 分镜清单", "按组推进，而不是按时间轴剪辑");
+        setPanel("media", "03 · 媒体轨", "需要时再打开预览与轨道");
+        setPanel("output", "04 · 成片出库", "分辨率、导出方式与运行进度");
+    }
+}
+
 /** Toggle media step button/panel; relocate toolbar; leave media step if unavailable. */
 export function updateBinderMediaStep(editor) {
     const root = editor?.root;
@@ -52,6 +103,8 @@ export function updateBinderMediaStep(editor) {
     const workbench = editor.workbench || _q(root, ".h3d-workbench");
     const mediaPanel = workbench && _q(workbench, '[data-r="h3d-panel-media"]');
     if (mediaPanel) mediaPanel.classList.toggle("h3d-binder-panel-disabled", !need);
+
+    updateBinderStepCopy(editor);
 
     if (!need && root.dataset.h3dStep === "media") {
         if (typeof editor.showBinderStep === "function") editor.showBinderStep("shots");

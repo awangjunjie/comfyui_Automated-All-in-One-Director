@@ -6,6 +6,7 @@ import {
     newBatchSegment,
     defaultDurationSec,
     taskUsesImageDirector,
+    taskUsesPromptDirector,
     directorModeFromTaskKey,
     taskUsesPromptGroups,
     resolveTaskKey,
@@ -3455,8 +3456,8 @@ export function syncLocalDirectorForTask(editor) {
         let groupNote;
         if (key === "m2v") {
             groupNote = globalScope
-                ? "动作迁移 · 媒体轨动作视频（按时长）+ 角色图 →「→ 全局」扩写"
-                : `动作迁移 · 当前 ${nGroups} 分段（均分/裁切）→ 按组扩写；图片定角色`;
+                ? "动作迁移 · 只需动作视频 + 人物图/场景图/音频（可选整局/分镜）"
+                : `动作迁移 · 当前 ${nGroups} 分段；各卡只配人物图/场景图/音频`;
         } else if (globalScope) {
             groupNote = "整局模式 · 单视频，不可自动分镜 → 用「→ 全局」扩写成片提示词";
         } else if (taskUsesPromptGroups(taskKey)) {
@@ -3468,26 +3469,58 @@ export function syncLocalDirectorForTask(editor) {
     }
     const flow = desk.querySelector('[data-r="ld-flow-hint"]');
     if (flow) {
-        const key = String(taskKey || "").split(" — ", 1)[0].trim();
+        const key = resolveTaskKey(taskKey);
         if (key === "m2v") {
             flow.textContent = globalScope
-                ? "动作迁移：媒体轨上传单路动作视频（预览/裁切）+ 角色图 → 秒数默认同视频时长可手调 →「→ 全局」扩写 → Queue。"
-                : "动作迁移分镜：媒体轨均分/分割后按分段生成；每段秒数默认同分段时长可手调；卡片只配角色图与提示词。";
+                ? "动作迁移：选整局 → 上传动作视频 + 人物图/场景图/音频 → Queue（无需提示词）"
+                : "动作迁移：选分镜 → 媒体轨均分/裁切 → 各段上传人物图/场景图/音频 → Queue（无需提示词）";
         } else {
             flow.textContent = globalScope
                 ? "整局流程：故事 / 简述 →（可选）连续性/声景 →「→ 全局」扩写成片提示词 →（可选）参考图或首尾帧。无分镜、不分镜组。"
                 : "流程：故事分镜 →（可选）连续性/声景 →（可选）参考图或首尾帧；已有各组简述时用「按组扩写」。各按钮只做一步，不会自动连锁其它步骤。";
         }
     }
+    updatePromptDirectorVisibility(editor);
 }
 
-/** Show/hide「参考图导演 / 首尾帧导演」tab by task type; disable flags for pure t2v/t2i. */
+/** Show/hide「提示词导演」tab；m2v 强制关闭。 */
+export function updatePromptDirectorVisibility(editor) {
+    const desk = editor?.studioDesk;
+    if (!desk) return;
+    const taskKey = editor.getTaskKey?.() || "t2v";
+    const show = taskUsesPromptDirector(taskKey);
+    const tabBtn = desk.querySelector('[data-tab="director"]');
+    const page = desk.querySelector('[data-page="director"]');
+    tabBtn?.classList.toggle("hidden", !show);
+    if (page) {
+        page.style.display = show ? "" : "none";
+        page.classList.toggle("hidden", !show);
+    }
+    if (!show) {
+        setNodeWidget(editor.node, "local_director_enable", false);
+        const td = editor.timeline?.desk?.text_director;
+        if (td && typeof td === "object") {
+            td.enabled = false;
+            td.expand_on_queue = false;
+        }
+        if (tabBtn?.classList.contains("active") || page?.classList.contains("active")) {
+            const fallback = desk.querySelector('[data-tab="continuity"]') || desk.querySelector("[data-tab]");
+            if (fallback) fallback.click();
+        }
+    }
+}
+
+/** Show/hide「参考图导演 / 首尾帧导演」tab by task type; disable flags for pure t2v/t2i/m2v. */
 export function updateImageDirectorVisibility(editor) {
     const desk = editor?.studioDesk;
     if (!desk) return;
     const taskKey = editor.getTaskKey?.() || "t2v";
+    const key = resolveTaskKey(taskKey);
     const show = taskUsesImageDirector(taskKey);
+    const showPrompt = taskUsesPromptDirector(taskKey);
     const isFl = isEditorFl2v(editor);
+    const isM2v = key === "m2v";
+    updatePromptDirectorVisibility(editor);
     const tabBtn = desk.querySelector('[data-tab="imagedir"]');
     const page = desk.querySelector('[data-page="imagedir"]');
     tabBtn?.classList.toggle("hidden", !show);
@@ -3496,11 +3529,17 @@ export function updateImageDirectorVisibility(editor) {
 
     const title = desk.querySelector('[data-r="desk-title"]');
     if (title) {
-        title.textContent = show
-            ? (isFl
+        if (isM2v) {
+            title.textContent = "动作迁移 · 动作视频 + 人物图/场景图/音频";
+        } else if (show) {
+            title.textContent = isFl
                 ? "H3 导演工台 · 连续性 / 声景 / 提示词 / 首尾帧"
-                : "H3 导演工台 · 连续性 / 声景 / 提示词 / 参考图")
-            : "H3 导演工台 · 连续性 / 声景 / 提示词";
+                : "H3 导演工台 · 连续性 / 声景 / 提示词 / 参考图";
+        } else {
+            title.textContent = showPrompt
+                ? "H3 导演工台 · 连续性 / 声景 / 提示词"
+                : "H3 导演工台 · 连续性 / 声景";
+        }
     }
 
     const i2vBlock = desk.querySelector('[data-r="idir-i2v-block"]');

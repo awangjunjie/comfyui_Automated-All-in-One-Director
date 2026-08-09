@@ -98,6 +98,8 @@ const THEME_CSS = `
 }
 .h3d-binder.h3d-binder-no-media .h3d-step[data-step="media"],
 .h3d-binder[data-h3d-media="0"] .h3d-step[data-step="media"]{display:none!important}
+.h3d-binder.h3d-binder-m2v .h3d-step-rail{grid-template-columns:repeat(3,minmax(0,1fr))}
+.h3d-binder.h3d-binder-m2v .h3d-step[data-step="bible"]{display:none!important}
 .h3d-binder-panel.h3d-binder-panel-disabled{display:none!important}
 .h3d-step{
   display:flex;flex-direction:column;align-items:flex-start;gap:2px;

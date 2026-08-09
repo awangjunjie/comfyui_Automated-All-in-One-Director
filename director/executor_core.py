@@ -192,7 +192,8 @@ def _build_minimax_inputs(
                 log.warning("t2v prev_tail inject failed: %s", exc)
     elif task_key in {"i2v", "r2v", "m2v"}:
         # i2v: soft refs via ReferenceToVideo; with chain → hard first_frame (ImageToVideo).
-        # r2v/m2v: soft <Picture N>; chain reserves Picture 1 + post-decode pixel lock.
+        # r2v: soft <Picture N>; chain reserves Picture 1 + post-decode pixel lock.
+        # m2v: never steal Picture 1 — character sheets must stay appearance anchors.
         ref_kwargs = refs_to_kwargs_for_context(task_key, seg.refs)
         ref_images = {}
         for key, tensor in ref_kwargs.items():
@@ -207,28 +208,52 @@ def _build_minimax_inputs(
         ):
             try:
                 chain_frame = fit_canvas(prev_tail[-1:].clone(), ctx_w, ctx_h)
-                # Drop any user image in slot 0 — reserved for chain handoff.
-                ref_images = {
-                    k: v
-                    for k, v in (ref_images or {}).items()
-                    if k != "ref_image_0"
-                }
-                if task_key == "i2v":
-                    # Hard keyframe on fl2va path — soft Picture alone cannot pin frame0.
-                    first_frame = chain_frame
-                    if not ref_images:
-                        ref_images = None
-                    log.info(
-                        "i2v seg#%d: injected prev last-frame as first_frame hard lock",
-                        int(getattr(seg, "index", 0)) + 1,
-                    )
+                if task_key == "m2v":
+                    # Keep character/scene refs intact. Optional continuity: attach prev
+                    # last-frame to the first free soft-ref slot (not Picture 1).
+                    used = set()
+                    for k in (ref_images or {}):
+                        try:
+                            used.add(int(str(k).rsplit("_", 1)[-1]))
+                        except ValueError:
+                            pass
+                    free_idx = next((i for i in range(1, 9) if i not in used), None)
+                    if free_idx is not None:
+                        ref_images[f"ref_image_{free_idx}"] = chain_frame
+                        log.info(
+                            "m2v seg#%d: continuity frame attached as ref_image_%d "
+                            "(character Picture 1 preserved)",
+                            int(getattr(seg, "index", 0)) + 1,
+                            free_idx,
+                        )
+                    else:
+                        log.info(
+                            "m2v seg#%d: skip continuity soft-ref (all 9 picture slots filled)",
+                            int(getattr(seg, "index", 0)) + 1,
+                        )
                 else:
-                    ref_images = {"ref_image_0": chain_frame, **ref_images}
-                    log.info(
-                        "%s seg#%d: injected prev last-frame as <Picture 1> / ref_image_0",
-                        task_key,
-                        int(getattr(seg, "index", 0)) + 1,
-                    )
+                    # Drop any user image in slot 0 — reserved for chain handoff.
+                    ref_images = {
+                        k: v
+                        for k, v in (ref_images or {}).items()
+                        if k != "ref_image_0"
+                    }
+                    if task_key == "i2v":
+                        # Hard keyframe on fl2va path — soft Picture alone cannot pin frame0.
+                        first_frame = chain_frame
+                        if not ref_images:
+                            ref_images = None
+                        log.info(
+                            "i2v seg#%d: injected prev last-frame as first_frame hard lock",
+                            int(getattr(seg, "index", 0)) + 1,
+                        )
+                    else:
+                        ref_images = {"ref_image_0": chain_frame, **ref_images}
+                        log.info(
+                            "%s seg#%d: injected prev last-frame as <Picture 1> / ref_image_0",
+                            task_key,
+                            int(getattr(seg, "index", 0)) + 1,
+                        )
             except Exception as exc:
                 log.warning("%s prev_tail inject failed: %s", task_key, exc)
         if not ref_images:
@@ -295,6 +320,7 @@ def execute_director_plan_core(
     shift_video: float = 12.0,
     shift_audio: float = 3.0,
     clear_vram_between_segments: bool = True,
+    manual_sigmas: list[float] | None = None,
 ) -> tuple[torch.Tensor, list[torch.Tensor], list[dict[str, Any]], str]:
     """Process every segment with MiniMax H3 conditioning + single-stage sampling."""
     audio_mode = resolve_audio_mode(plan)
@@ -561,6 +587,7 @@ def execute_director_plan_core(
             scheduler=scheduler,
             shift_video=shift_video,
             shift_audio=shift_audio,
+            manual_sigmas=manual_sigmas,
             on_phase=_report_sample_phase,
         )
 

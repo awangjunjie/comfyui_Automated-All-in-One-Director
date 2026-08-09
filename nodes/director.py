@@ -8,6 +8,7 @@ from __future__ import annotations
 import json
 import logging
 
+import folder_paths
 import comfy.samplers
 
 from ..director.executor_core import execute_director_plan_core
@@ -227,6 +228,37 @@ class MiniMaxH3Director:
                     "FLOAT",
                     {"default": 3.0, "min": 0.01, "max": 100.0, "step": 0.01, "tooltip": "MiniMaxH3SigmaShift shift_audio."},
                 ),
+                "nfe8_accel_enable": (
+                    "BOOLEAN",
+                    {
+                        "default": False,
+                        "tooltip": (
+                            "开启 8 步音视频加速（Tutu 20→8 NFE）：强制 Euler + 固定 ManualSigmas + "
+                            "shift 12/3；下方选择匹配 LoRA（也可在成片栏勾选同名开关）。"
+                            "最适合 FL2VA（t2v/i2v/fl2v）。"
+                        ),
+                    },
+                ),
+                "nfe8_lora_name": (
+                    ["none"] + folder_paths.get_filename_list("loras"),
+                    {
+                        "default": "none",
+                        "tooltip": (
+                            "Tutu 20→8 NFE LoRA（models/loras/，如 comfyui/tutu-t8-*20to8*.safetensors）。"
+                            "选 none 时开启加速会尽量自动匹配 *20to8* / tutu-t8*。"
+                        ),
+                    },
+                ),
+                "nfe8_lora_strength": (
+                    "FLOAT",
+                    {
+                        "default": 0.8,
+                        "min": -2.0,
+                        "max": 2.0,
+                        "step": 0.05,
+                        "tooltip": "8 步加速 LoRA 强度（建议先试 0.8）。",
+                    },
+                ),
                 **director_perf_inputs(),
                 **director_studio_inputs(),
             },
@@ -291,6 +323,9 @@ class MiniMaxH3Director:
         seed=0,
         shift_video=12.0,
         shift_audio=3.0,
+        nfe8_accel_enable=False,
+        nfe8_lora_name="none",
+        nfe8_lora_strength=0.8,
         clear_vram_between_segments=True,
         export_source_images=False,
         local_director_enable=False,
@@ -327,6 +362,36 @@ class MiniMaxH3Director:
         ref_gen_only = bool(ref_gen_only)
         image_director_enable = bool(image_director_enable)
         image_director_auto_inject = bool(image_director_auto_inject)
+        local_director_enable = bool(local_director_enable)
+
+        if timeline_data and str(timeline_data).strip():
+            try:
+                tl = json.loads(timeline_data)
+            except Exception:
+                tl = {}
+        else:
+            tl = {}
+
+        # m2v：动作迁移不走提示词导演 / 参考图导演（角色图在素材卡，动作在媒体轨）
+        from ..lib.task_prompts import resolve_task_key
+
+        _g = tl.get("global") if isinstance(tl.get("global"), dict) else {}
+        _task_key = resolve_task_key(
+            _g.get("taskType") or _g.get("task_type") or task_type or ""
+        )
+        if _task_key == "m2v":
+            local_director_enable = False
+            image_director_enable = False
+            image_director_auto_inject = False
+            ref_gen_enable = False
+            ref_gen_only = False
+            desk_m2v = tl.get("desk") if isinstance(tl.get("desk"), dict) else None
+            if desk_m2v is not None:
+                td_m2v = desk_m2v.get("text_director")
+                if isinstance(td_m2v, dict):
+                    td_m2v["enabled"] = False
+                    td_m2v["expand_on_queue"] = False
+
         if ref_gen_only:
             # Stills-only run always generates + injects
             ref_gen_enable = True
@@ -339,13 +404,6 @@ class MiniMaxH3Director:
             run_auto_ref_generation,
         )
 
-        if timeline_data and str(timeline_data).strip():
-            try:
-                tl = json.loads(timeline_data)
-            except Exception:
-                tl = {}
-        else:
-            tl = {}
         ensure_image_director(tl)
         tl["image_director"]["enabled"] = bool(image_director_enable)
         tl["image_director"]["auto_inject"] = bool(image_director_auto_inject)
@@ -640,6 +698,34 @@ class MiniMaxH3Director:
             unique_id=unique_id,
         )
 
+        manual_sigmas = None
+        if nfe8_accel_enable:
+            from ..director.nfe8_accel import (
+                apply_nfe8_sampling_overrides,
+                maybe_load_nfe8_lora,
+                resolve_nfe8_lora_name,
+            )
+
+            steps, sampler, scheduler, shift_video, shift_audio, manual_sigmas = (
+                apply_nfe8_sampling_overrides(
+                    steps=steps,
+                    sampler=sampler,
+                    scheduler=scheduler,
+                    shift_video=shift_video,
+                    shift_audio=shift_audio,
+                )
+            )
+            nfe8_lora_name = resolve_nfe8_lora_name(nfe8_lora_name)
+            model, lora_on = maybe_load_nfe8_lora(model, nfe8_lora_name, nfe8_lora_strength)
+            _log.info(
+                "NFE8 accel ON: steps=%s sampler=%s shift_v/a=%s/%s lora=%s",
+                steps,
+                sampler,
+                shift_video,
+                shift_audio,
+                (nfe8_lora_name if lora_on else "none"),
+            )
+
         combined, segment_outputs, segment_audios, report = execute_director_plan_core(
             plan,
             node_id=unique_id,
@@ -655,7 +741,15 @@ class MiniMaxH3Director:
             shift_video=shift_video,
             shift_audio=shift_audio,
             clear_vram_between_segments=clear_vram_between_segments,
+            manual_sigmas=manual_sigmas,
         )
+        if nfe8_accel_enable:
+            report = (
+                (report or "")
+                + "\n\n[8步音视频加速] Euler + ManualSigmas (Tutu 20→8 NFE)；"
+                + f"steps={steps}, shift_video={shift_video}, shift_audio={shift_audio}, "
+                + f"lora={nfe8_lora_name if str(nfe8_lora_name or '').strip() not in {'', 'none'} else 'none'}."
+            )
 
         images_out, audio_out, fps_out, frame_count, source_images_out, report = finalize_director_outputs(
             plan,

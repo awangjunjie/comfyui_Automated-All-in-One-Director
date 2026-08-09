@@ -346,7 +346,8 @@ def enrich_timeline_dict(timeline: dict) -> dict:
     if is_prompt_batch:
         edit_mode = "segment"
         timeline["editMode"] = "segment"
-        if timeline_mode not in ("fl2v", "gen_blank", "gen_image", "video"):
+        # m2v keeps a media track but must stay on prompt_batch (never v2v "video" plan).
+        if task_key == "m2v" or timeline_mode not in ("fl2v", "gen_blank", "gen_image", "video"):
             timeline["timelineMode"] = "prompt_batch"
     is_global = edit_mode != "segment"
 
@@ -355,23 +356,34 @@ def enrich_timeline_dict(timeline: dict) -> dict:
         g = {}
         timeline["global"] = g
 
-    base_prompt = str(g.get("prompt") or "").strip()
-    # Desk style/soundscape only enrich the global field — do not copy onto every group.
-    desk_suffix = build_desk_global_suffix(timeline)
-    if desk_suffix:
-        for line in desk_suffix.splitlines():
-            line = line.strip()
-            if line and line not in base_prompt:
-                base_prompt = f"{base_prompt}\n{line}".strip() if base_prompt else line
+    if task_key == "m2v":
+        from .plan import FIXED_M2V_PROMPT
 
-    if is_global:
-        base_prompt = inject_continuity(base_prompt, timeline)
+        base_prompt = FIXED_M2V_PROMPT
+    else:
+        base_prompt = str(g.get("prompt") or "").strip()
+        # Desk style/soundscape only enrich the global field — do not copy onto every group.
+        desk_suffix = build_desk_global_suffix(timeline)
+        if desk_suffix:
+            for line in desk_suffix.splitlines():
+                line = line.strip()
+                if line and line not in base_prompt:
+                    base_prompt = f"{base_prompt}\n{line}".strip() if base_prompt else line
+
+        if is_global:
+            base_prompt = inject_continuity(base_prompt, timeline)
 
     g["prompt"] = base_prompt
 
     for seg in segs:
         raw = str(seg.get("prompt") or "").strip()
         if is_prompt_batch:
+            # m2v：固定动作迁移提示词，禁止被运镜/连贯文案稀释成「保留原视频」。
+            if task_key == "m2v":
+                from .plan import FIXED_M2V_PROMPT
+
+                seg["prompt"] = FIXED_M2V_PROMPT
+                continue
             # Keep each group's own text; only inject continuity/camera onto non-empty prompts.
             if raw:
                 seg["prompt"] = enrich_segment_prompt(raw, seg, timeline, is_global_mode=False)

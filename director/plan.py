@@ -338,6 +338,27 @@ def reinforce_r2v_prompt(
     return f"{' '.join(prefix_parts)} {text}"
 
 
+# UI 不展示提示词；生成侧统一用固定模板。
+# 必须用官方 <Picture N>/<Video K> 标签，并明确「替换视频里的人」——否则模型会像 v2v 一样尽量保留原视频。
+# 标签序号按「实际传入的参考顺序」1-based（与 MiniMaxH3ReferenceToVideo 呈现序一致），不是素材卡槽位号。
+FIXED_M2V_PROMPT = (
+    "Motion transfer for EVERY frame: take ONLY motion, pose sequence, timing, and camera from <Video 1>. "
+    "The person/identity, face, hair, body shape, and clothing must follow character reference pictures "
+    "(<Picture 1> and other character pictures) from the first frame to the last frame. "
+    "Use scene reference pictures for environment/background when provided. "
+    "Never revert to the original actor, face, outfit, or identity from <Video 1> at any time. "
+    "If reference audio is provided, keep lip-sync / performance aligned. "
+    "动作迁移（全程）：只借用 <Video 1> 的动作与运镜；从头到尾人物外观以参考图为准，"
+    "禁止后半段漂回原视频人物身份。"
+)
+
+
+def _presentation_ordinals(slot_indices: list[int] | None) -> list[int]:
+    """Map filled slot indices → 0-based presentation ordinals (sorted unique → 0..n-1)."""
+    slots = sorted({int(i) for i in (slot_indices or []) if int(i) >= 0})
+    return list(range(len(slots)))
+
+
 def reinforce_m2v_prompt(
     prompt: str,
     *,
@@ -345,28 +366,19 @@ def reinforce_m2v_prompt(
     video_indices: list[int] | None = None,
     audio_indices: list[int] | None = None,
 ) -> str:
-    """Motion transfer: ensure media tags + role hint (video=motion, picture=appearance)."""
+    """Motion transfer: fixed role prompt + tags matching ref presentation order.
+
+    ``*_indices`` may be raw slot indices; they are converted to presentation ordinals
+    so tags align with MiniMaxH3ReferenceToVideo (<Picture 1> = first filled image, etc.).
+    """
+    del prompt  # UI free-form text is ignored for m2v
     text = reinforce_r2v_prompt(
-        prompt,
-        ref_indices=ref_indices,
-        video_indices=video_indices,
-        audio_indices=audio_indices,
+        FIXED_M2V_PROMPT,
+        ref_indices=_presentation_ordinals(ref_indices),
+        video_indices=_presentation_ordinals(video_indices),
+        audio_indices=_presentation_ordinals(audio_indices),
     )
-    lower = text.lower()
-    has_role = (
-        "动作" in text
-        or "运镜" in text
-        or "motion" in lower
-        or "appearance" in lower
-        or "参考视频" in text
-        or "参考图" in text
-    )
-    if has_role:
-        return text
-    return (
-        "人物外观参考图片1，动作与运镜参考视频1。"
-        f" {text}"
-    ).strip()
+    return text.strip() or FIXED_M2V_PROMPT
 
 
 def _segment_ranges_from_timeline(timeline: dict, total: int) -> list[tuple[int, int, dict]]:

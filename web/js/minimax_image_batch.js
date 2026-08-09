@@ -573,7 +573,8 @@ export function normalizeImageBatchSegments(editor) {
                 length: useLen,
                 frameCount: fc,
                 ...(isVideo ? { durationSec } : {}),
-                negativePrompt: seg.negativePrompt ?? "",
+                prompt: FIXED_M2V_PROMPT,
+                negativePrompt: "",
                 genImage: seg.genImage || { imageFile: "" },
                 refs: seg.refs || [],
                 refAudios: seg.refAudios || [],
@@ -607,6 +608,8 @@ export function normalizeImageBatchSegments(editor) {
     if (!fixed.length) fixed.push(newBatchSegment({ durationSec: defSec }));
     editor.timeline.segments = fixed;
     if (isM2v) {
+        editor.timeline.global = editor.timeline.global || {};
+        editor.timeline.global.prompt = FIXED_M2V_PROMPT;
         const videoTotal = typeof editor.getTotalFrames === "function"
             ? editor.getTotalFrames()
             : (parseInt(editor.timeline.totalFrames, 10) || 0);
@@ -1210,46 +1213,114 @@ function renderVideoSlot(el, ref, slot, index, editor) {
     }
 }
 
-/** Build r2v top row: left=images, right=videos then audios. m2v: images (+optional audio); motion video is media-track. */
+/** m2v 固定提示词（界面不展示；生成时由后端再加固 / 对齐官方标签）。 */
+export const FIXED_M2V_PROMPT =
+    "Motion transfer: use ONLY the motion, pose sequence, timing, and camera movement from <Video 1>. "
+    + "REPLACE the person/identity, face, hair, and clothing in <Video 1> with the appearance from "
+    + "character reference pictures (<Picture 1> and any other character pictures provided). "
+    + "Use scene reference pictures for environment/background when provided. "
+    + "Do NOT keep the original face or identity from <Video 1>. "
+    + "If reference audio is provided, keep lip-sync / performance aligned. "
+    + "动作迁移：只保留 <Video 1> 的动作与运镜；人物外观以参考图为准，禁止保留原视频人物身份。";
+
+function appendM2vImageSlotRange(refsEl, seg, segIndex, editor, fromIdx, toIdx) {
+    for (let slotIndex = fromIdx; slotIndex <= toIdx; slotIndex++) {
+        const ref = (seg.refs || []).find((r) => Number(r.index ?? r.slot) === slotIndex);
+        const slot = document.createElement("div");
+        slot.className = "h3d-batch-ref";
+        renderRefSlot(slot, ref, slotIndex, segIndex, editor, {});
+        slot.onclick = () => {
+            if (editor._batchRefDragMoved) {
+                editor._batchRefDragMoved = false;
+                return;
+            }
+            uploadSegRef(editor, segIndex, slotIndex);
+        };
+        bindBatchRefDrop(slot, editor, segIndex, slotIndex);
+        refsEl.appendChild(slot);
+    }
+}
+
+/** Build r2v top row: left=images, right=videos then audios. m2v: 人物/场景图 + 音频；动作视频在媒体轨。 */
 function appendR2vMediaSections(card, seg, index, editor) {
     const isM2v = isMotionTransferTask(editor?.getTaskKey?.() || "");
     const imgs = document.createElement("div");
     imgs.className = isM2v ? "h3d-batch-r2v-imgs h3d-batch-m2v-imgs" : "h3d-batch-r2v-imgs";
-    const imgBlock = document.createElement("div");
-    imgBlock.className = "h3d-batch-media-block";
-    const chainOn = isChainContinuityOn(editor);
-    const head = document.createElement("div");
-    head.className = "h3d-studio-row";
-    head.style.cssText = "justify-content:space-between;margin-bottom:2px";
-    const labelText = isM2v
-        ? "角色参考图 (图片1–9)"
-        : (chainOn
-            ? "参考图（图片1=链式首帧，用户可传图片2–9）"
-            : "参考图 (图片1–9)");
-    head.innerHTML = `
-        <span class="h3d-label">${labelText}</span>
-        <button type="button" class="h3d-btn" data-a="batch-clear-seg-refs" title="清空本组全部参考图">清空图片</button>`;
-    head.querySelector('[data-a="batch-clear-seg-refs"]').onclick = (e) => {
-        e.stopPropagation();
-        clearSegBatchRefs(editor, index, { images: true });
-    };
-    imgBlock.appendChild(head);
+
     if (isM2v) {
         const tip = document.createElement("div");
         tip.className = "h3d-batch-hint";
-        tip.style.cssText = "margin:0 0 4px;opacity:.85;font-size:11px";
+        tip.style.cssText = "margin:0 0 6px;opacity:.9;font-size:11px";
         const globalScope = (editor.timeline?.editMode || "global") === "global";
         tip.textContent = globalScope
-            ? "动作源在上方媒体轨：上传/预览后按时长整段生成（整局不设秒数）。"
-            : "动作源在上方媒体轨：上传/预览/裁切/均分后，选用对应分段生成；秒数可手调。";
-        imgBlock.appendChild(tip);
+            ? "只需上传素材：媒体轨=动作视频；本卡=人物图/场景图/音频。"
+            : "分镜：媒体轨均分/裁切选段；各卡上传人物图/场景图/音频。";
+        imgs.appendChild(tip);
+
+        const charBlock = document.createElement("div");
+        charBlock.className = "h3d-batch-media-block";
+        charBlock.innerHTML = `
+            <div class="h3d-studio-row" style="justify-content:space-between;margin-bottom:2px">
+                <span class="h3d-label">人物图 (图片1–4)</span>
+                <button type="button" class="h3d-btn" data-a="batch-clear-char-refs" title="清空人物图">清空</button>
+            </div>`;
+        charBlock.querySelector('[data-a="batch-clear-char-refs"]').onclick = (e) => {
+            e.stopPropagation();
+            seg.refs = (seg.refs || []).filter((r) => Number(r.index ?? r.slot) > 3);
+            editor.renderImageBatchGroups?.();
+            editor.scheduleTimelineSync?.();
+        };
+        const charRefs = document.createElement("div");
+        charRefs.className = "h3d-batch-refs";
+        appendM2vImageSlotRange(charRefs, seg, index, editor, 0, 3);
+        charBlock.appendChild(charRefs);
+        imgs.appendChild(charBlock);
+
+        const sceneBlock = document.createElement("div");
+        sceneBlock.className = "h3d-batch-media-block";
+        sceneBlock.style.marginTop = "8px";
+        sceneBlock.innerHTML = `
+            <div class="h3d-studio-row" style="justify-content:space-between;margin-bottom:2px">
+                <span class="h3d-label">场景图 (图片5–9)</span>
+                <button type="button" class="h3d-btn" data-a="batch-clear-scene-refs" title="清空场景图">清空</button>
+            </div>`;
+        sceneBlock.querySelector('[data-a="batch-clear-scene-refs"]').onclick = (e) => {
+            e.stopPropagation();
+            seg.refs = (seg.refs || []).filter((r) => Number(r.index ?? r.slot) < 4);
+            editor.renderImageBatchGroups?.();
+            editor.scheduleTimelineSync?.();
+        };
+        const sceneRefs = document.createElement("div");
+        sceneRefs.className = "h3d-batch-refs";
+        appendM2vImageSlotRange(sceneRefs, seg, index, editor, 4, 8);
+        sceneBlock.appendChild(sceneRefs);
+        imgs.appendChild(sceneBlock);
+        card.appendChild(imgs);
+    } else {
+        const imgBlock = document.createElement("div");
+        imgBlock.className = "h3d-batch-media-block";
+        const chainOn = isChainContinuityOn(editor);
+        const head = document.createElement("div");
+        head.className = "h3d-studio-row";
+        head.style.cssText = "justify-content:space-between;margin-bottom:2px";
+        const labelText = chainOn
+            ? "参考图（图片1=链式首帧，用户可传图片2–9）"
+            : "参考图 (图片1–9)";
+        head.innerHTML = `
+            <span class="h3d-label">${labelText}</span>
+            <button type="button" class="h3d-btn" data-a="batch-clear-seg-refs" title="清空本组全部参考图">清空图片</button>`;
+        head.querySelector('[data-a="batch-clear-seg-refs"]').onclick = (e) => {
+            e.stopPropagation();
+            clearSegBatchRefs(editor, index, { images: true });
+        };
+        imgBlock.appendChild(head);
+        const refs = document.createElement("div");
+        refs.className = "h3d-batch-refs";
+        appendUserRefImageSlots(refs, seg, index, editor);
+        imgBlock.appendChild(refs);
+        imgs.appendChild(imgBlock);
+        card.appendChild(imgs);
     }
-    const refs = document.createElement("div");
-    refs.className = "h3d-batch-refs";
-    appendUserRefImageSlots(refs, seg, index, editor);
-    imgBlock.appendChild(refs);
-    imgs.appendChild(imgBlock);
-    card.appendChild(imgs);
 
     const av = document.createElement("div");
     av.className = "h3d-batch-r2v-av";
@@ -1515,8 +1586,8 @@ export function renderImageBatchGroups(editor) {
                 ? "参考主体 · 链式连贯开：图片1=上镜末帧；用户参考图剩 8 槽（图片2–9）"
                 : "参考主体生视频 · 图片/音频/视频纯参考；可开「链式连贯」",
             m2v: (editor.timeline?.editMode || "global") === "global"
-                ? "动作迁移 · 媒体轨上传单路动作视频；生成时长跟视频；图片1–N=角色外观"
-                : "动作迁移 · 媒体轨均分/裁切分段；秒数默认同分段可手调；图片1–N=角色外观",
+                ? "动作迁移：短视频可整局；超过约 5s 会自动分镜。人物图要清晰正脸/全身，场景图可选。"
+                : "动作迁移分镜：每段约 5s 效果更稳；各卡确认人物图后 Queue（勿只跑第 1 段）。",
         };
         editor.batchHint.textContent = hints[key] || (isVideo ? "每组生成一段视频" : "每组生成 1 张图片");
     }
@@ -1537,8 +1608,8 @@ export function renderImageBatchGroups(editor) {
         const hasAnyImage = (editor.timeline.segments || []).some((s) => (s.refs || []).some((r) => r?.imageFile)) || hasGlobal;
         if (isMotionTransferTask(key) && (!hasTrackVideo || !hasAnyImage)) {
             editor.batchI2vNotice.textContent =
-                "动作迁移需要：媒体轨上传 1 路动作视频（可预览、裁切、均分）+ 至少 1 张角色参考图。"
-                + "提示词示例：人物外观参考图片1，动作与运镜参考视频1。";
+                "动作迁移：①「动作视频」上传 1 路 → ② 人物图（建议多张清晰正脸/全身）→ ③ Queue。"
+                + "长视频会自动按约 5s 分镜，避免后半段漂回原片。";
             editor.batchI2vNotice.classList.add("visible");
         } else if (needsRefs && !hasAnyMedia && !hasGlobal && !isMotionTransferTask(key)) {
             editor.batchI2vNotice.textContent = isR2vLikeTask(key)
@@ -1560,7 +1631,7 @@ export function renderImageBatchGroups(editor) {
     const titleEl = editor.batchPanel?.querySelector('[data-r="batch-title"]');
     if (titleEl) {
         titleEl.innerHTML = isMotionTransferTask(key)
-            ? "<b>动作迁移</b><span>媒体轨定动作 · 图片定角色</span>"
+            ? "<b>动作迁移素材</b><span>人物图 · 场景图 · 音频</span>"
             : isR2vLikeTask(key)
                 ? "<b>素材组清单</b><span>参考图 / 音视频 · 纵向卡片</span>"
                 : "<b>提示词组清单</b><span>纵向卡片</span>";
@@ -1646,9 +1717,13 @@ export function renderImageBatchGroups(editor) {
             head.appendChild(runCb);
         }
         const title = document.createElement("b");
-        title.textContent = globalScope
-            ? (isR2v ? "整局素材" : "整局提示词")
-            : (isR2v ? `素材组 ${index + 1}` : `提示词组 ${index + 1}`);
+        if (isMotionTransferTask(key)) {
+            title.textContent = globalScope ? "整局素材" : `分镜素材 ${index + 1}`;
+        } else {
+            title.textContent = globalScope
+                ? (isR2v ? "整局素材" : "整局提示词")
+                : (isR2v ? `素材组 ${index + 1}` : `提示词组 ${index + 1}`);
+        }
         head.appendChild(title);
         const meta = document.createElement("div");
         meta.className = "h3d-batch-head-meta";
@@ -1745,35 +1820,39 @@ export function renderImageBatchGroups(editor) {
             card.appendChild(media);
         }
 
-        const prompts = document.createElement("div");
-        prompts.className = "h3d-batch-prompts";
-        const ph = isMotionTransferTask(key)
-            ? "人物外观参考图片1，动作与运镜参考视频1。少描写动作细节，点名素材职责即可。"
-            : isR2v
+        // m2v：不展示提示词，写入固定模板
+        if (isMotionTransferTask(key)) {
+            seg.prompt = FIXED_M2V_PROMPT;
+            seg.negativePrompt = "";
+        } else {
+            const prompts = document.createElement("div");
+            prompts.className = "h3d-batch-prompts";
+            const ph = isR2v
                 ? "描述画面与运动；可用 <Picture N> / <Video K> / <Audio J>，或输入 @ 引用已上传素材"
                 : "描述要生成的内容（含画面、运镜、音频；MiniMax H3 无反向提示词）";
-        prompts.innerHTML = `
-            <span class="h3d-label">提示词</span>
-            <textarea data-f="prompt" placeholder="${ph}">${seg.prompt || ""}</textarea>`;
-        const promptEl = prompts.querySelector('[data-f="prompt"]');
-        promptEl.oninput = (e) => {
-            seg.prompt = e.target.value;
-            seg.negativePrompt = "";
-            editor.scheduleTimelineSync();
-        };
-        if (isR2v) {
-            wirePromptImageMentions(editor, promptEl, () => ({
-                refs: seg.refs || [],
-                audios: seg.refAudios || [],
-                videos: seg.refVideos || [],
-            }));
+            prompts.innerHTML = `
+                <span class="h3d-label">提示词</span>
+                <textarea data-f="prompt" placeholder="${ph}">${seg.prompt || ""}</textarea>`;
+            const promptEl = prompts.querySelector('[data-f="prompt"]');
+            promptEl.oninput = (e) => {
+                seg.prompt = e.target.value;
+                seg.negativePrompt = "";
+                editor.scheduleTimelineSync();
+            };
+            if (isR2v) {
+                wirePromptImageMentions(editor, promptEl, () => ({
+                    refs: seg.refs || [],
+                    audios: seg.refAudios || [],
+                    videos: seg.refVideos || [],
+                }));
+            }
+            card.appendChild(prompts);
         }
 
         const preview = document.createElement("div");
         preview.className = "h3d-batch-preview";
         renderPreview(preview, seg, index === runningIdx, isVideo, seg.previewFps || fps);
 
-        card.appendChild(prompts);
         card.appendChild(preview);
 
         list.appendChild(card);

@@ -9,6 +9,7 @@ from .nodes.conditioning import (
     MiniMaxH3DirectorPlannerConditioning,
 )
 from .nodes.director import MiniMaxH3Director
+from .nodes.nfe8_accel_node import MiniMaxH3Nfe8Accel
 from .nodes.still_model_switch import MiniMaxH3StillCheckpointLoader, MiniMaxH3StillModelSwitch
 
 NODE_CLASS_MAPPINGS = {
@@ -19,6 +20,7 @@ NODE_CLASS_MAPPINGS = {
     "MiniMaxH3DirectorPlannerConditioning": MiniMaxH3DirectorPlannerConditioning,
     "MiniMaxH3StillModelSwitch": MiniMaxH3StillModelSwitch,
     "MiniMaxH3StillCheckpointLoader": MiniMaxH3StillCheckpointLoader,
+    "MiniMaxH3Nfe8Accel": MiniMaxH3Nfe8Accel,
 }
 
 NODE_DISPLAY_NAME_MAPPINGS = {
@@ -28,6 +30,7 @@ NODE_DISPLAY_NAME_MAPPINGS = {
     "MiniMaxH3DirectorPlannerConditioning": "MiniMax H3 Director Planner Conditioning",
     "MiniMaxH3StillModelSwitch": "文生图模型切换（一键）",
     "MiniMaxH3StillCheckpointLoader": "文生图 Checkpoint（仅SDXL）",
+    "MiniMaxH3Nfe8Accel": "MiniMax H3 8步音视频加速",
 }
 
 WEB_DIRECTORY = "./web/js"

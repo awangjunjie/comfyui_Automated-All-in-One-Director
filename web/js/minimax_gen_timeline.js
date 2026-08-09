@@ -179,6 +179,12 @@ export function isMotionTransferTask(taskKey) {
     return resolveTaskKey(taskKey) === "m2v";
 }
 
+/**
+ * m2v 推荐单段生成长度（约 5s @24fps，落在 17n+5 网格）。
+ * 更长整段容易后半段漂回原视频人物身份。
+ */
+export const M2V_RECOMMENDED_CHUNK_FRAMES = 124;
+
 export function isGenTaskType(taskTypeValue) {
     const key = resolveTaskKey(taskTypeValue);
     return PROMPT_BATCH_TASKS.has(key);
@@ -285,14 +291,23 @@ export function taskUsesReferenceImages(taskKey) {
 
 /**
  * Whether the Studio「参考图导演」tab should be visible.
- * Pure text (t2v/t2i) hides it; source-image / ref-image / fl2v show it.
+ * Pure text (t2v/t2i) and motion-transfer (m2v) hide it; i2v/r2v/fl2v show it.
  */
 export function taskUsesImageDirector(taskKey) {
     const key = resolveTaskKey(taskKey);
-    if (key === "t2v" || key === "t2i") return false;
+    if (key === "t2v" || key === "t2i" || key === "m2v") return false;
     if (key === "i2v" || key === "i2i") return true;
     if (FL2V_TASKS.has(key)) return true;
     return taskUsesReferenceImages(key);
+}
+
+/**
+ * Whether the Studio「提示词导演」tab should be visible.
+ * m2v：媒体轨定动作 + 卡片人物/场景/音频，不走提示词导演（提示词后端固定）。
+ */
+export function taskUsesPromptDirector(taskKey) {
+    const key = resolveTaskKey(taskKey);
+    return key !== "m2v";
 }
 
 /**
