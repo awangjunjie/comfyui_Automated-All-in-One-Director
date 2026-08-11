@@ -207,7 +207,8 @@ pip install -r comfyui_Automated-All-in-One-Director/requirements.txt
 
 ## 致谢
 
-- **AI搅拌手 / AIMixer** -本插件以及节点的思路引导 
+- **AI搅拌手 / AIMixer** -本插件以及节点的思路引导
+- AI搅拌手原项目的链接（https://github.com/AIMixer/ComfyUI_MiniMaxH3_Director）
 - [Comfy-Org / ComfyUI](https://github.com/Comfy-Org/ComfyUI) — 官方 MiniMax H3 支持  
 - [MiniMax-AI](https://github.com/MiniMax-AI) — MiniMax H3 模型  
 - [Comfy-Org/MiniMax-H3](https://huggingface.co/Comfy-Org/MiniMax-H3) — 权重与文档  
