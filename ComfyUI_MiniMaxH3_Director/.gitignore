@@ -1,0 +1,27 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+.env
+.venv/
+venv/
+*.egg-info/
+
+# OS / IDE
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+*.log
+
+# Cursor (do not publish; avoids Cursor Agent noise in repo history)
+.cursor/
+.cursorrules
+.cursorignore
+*.cursor*
+
+# Runtime / local caches (ComfyUI output/minimax_seg_cache is outside this repo)
+.minimax_seg_cache/
+.bernini_seg_cache/

@@ -1,0 +1,133 @@
+# MiniMax H3 导演台（完整版）使用说明
+
+已在官方节点 `MiniMaxH3Director` 上直接整合本地导演台能力。
+节点显示名：**MiniMax H3 导演台（完整版）**
+
+画布上有 **「导演台 · 使用流程」** Markdown 说明节点，可对照面板操作。
+
+## 推荐总流程
+
+1. 选好任务类型（t2v / fl2v / fl_chain / r2v / v2v / rv2v）与模型  
+2. **连续性**：填角色 / 场景 / 道具（可勾选运行时注入）  
+3. **全局声景**：写风格、声景、配乐（可选）  
+4. **提示词导演**：故事 → 分镜提示词  
+5. **参考图导演 / 首尾帧导演**：出参考图或首尾帧并注入  
+6. 时间线微调各组提示词 / 时长 → **Queue**
+
+## 导演工作台（节点内面板）
+
+展开导演台节点下方面板，五个页签：
+
+### ① 连续性
+- 角色 / 场景 / 道具设定  
+- 默认「运行时注入到提示词」— 采样时自动并入，减少跑偏  
+
+### ② 全局声景
+- 整体风格、整体声景、非叙事配乐  
+
+### ③ 提示词导演
+1. 选择本地 GGUF 或云端 API，点「刷新模型」  
+2. **风格 Skill**（可选）：对齐官方 MiniMax-H3 skills 的导演台精简版  
+   - 通用 / 极简产品广告 / 3D 动画短片 / 剪纸定格解说 / 品牌宣传片  
+   - MV·歌词排版 / 双人合作游戏开场 / 纸拼贴解说 / 手绘+实拍混搭  
+3. 在「创意简述 / 故事」写剧情  
+4. 常用按钮（各做一步，不自动连锁）：  
+   - **故事 → 自动分镜**：自定镜数与时长并同步分镜  
+   - **故事 → N 组分镜**：固定拆成 N 组  
+   - **故事 → 连续性/声景**：按故事填充角色/场景/道具与风格/声景/配乐  
+   - **按提示词组扩写并同步**：只扩尚未完整的组简述（已完整则跳过）  
+   - **人物/场景 → 参考图导演**：提取人物三视图集合单图 + 场景提示词，写入参考图页  
+   - **内容 → 首尾帧导演**（fl2v / fl_chain）：按内容生成首/尾帧文生图提示词  
+   - **仅当前组 / → 全局**：局部或全局扩写  
+   推荐顺序：故事分镜 →（可选）连续性/声景 →（可选）参考图或首尾帧  
+5. 对白需标明语气；有全局布局时每镜回扣设定  
+6. 模式自动映射：`t2v→T2VA`，`i2v→I2VA`，`fl2v/fl_chain→FL2VA`，`r2v/v2v/rv2v→REF2VA`（六段式中文）  
+
+提示词规范对齐官方 [h3-prompt-writing](https://github.com/MiniMax-AI/MiniMax-H3/tree/main/skills/h3-prompt-writing)；  
+风格 Skill 为精简版，完整 agent 流程见同一仓库 `skills/`。  
+
+### ④ 参考图导演（非 fl2v / fl_chain）
+1. 勾选「启用参考图导演」  
+2. 可用「人物/场景 → 参考图导演」自动填槽，或手动 +人物 / +场景 / +道具  
+3. ① 生成生图提示词 → ② 仅生参考图并预览 → ③ 确认图 → 准备出片  
+4. 勾选「自动注入到时间线」→ 出片时作 `<Picture N>`  
+5. 本地生图需连接 `ref_gen_model` + `ref_gen_clip` + `ref_gen_vae`（SD/SDXL Checkpoint，不是 H3）  
+
+节点输出：
+
+| 输出 | 含义 |
+|------|------|
+| `ref_image_prompt` | 全局参考图提示词 |
+| `shot_image_prompts` | 各组分镜生图提示词 |
+| `global_ref_out` | 生成或传入的全局参考图 |
+
+### ⑤ 首尾帧导演（fl2v）
+1. 时间线「添加一组」：首帧必传，尾帧可选  
+2. 提示词导演点 **内容 → 首尾帧导演**  
+3. 参考图页按 ①②③ 生图并导入对应首/尾帧槽位  
+4. 各组提示词写中间运动过程 → Queue  
+
+### ⑤b 链式连贯（开关，适用于 t2v / fl2v / i2v / r2v）
+输出栏勾选 **「链式连贯」**（`fl_chain` 任务为常开预设）：
+1. 开启后：上一分镜末帧 → 下一分镜首帧，场景过渡更顺  
+2. **t2v**：第 1 组纯文生；从第 2 组起用上镜末帧作首帧硬锁定  
+3. **fl2v**：第 1 组仍须首帧；后续组首帧可留空  
+4. **i2v / r2v**：第 1 组也不强制首帧；开启后 **图片1 被首帧占用**，用户参考图剩 **图片2–9（8 槽）**  
+5. 请按顺序 Queue，勿跳过中间镜  
+
+### ⑥ 分镜导出
+- 「导出分镜表 Markdown」或「复制到剪贴板」  
+
+## 任务与模型速查
+
+| 任务 | UNET | 要点 |
+|------|------|------|
+| t2v | fl2va | 文生视频；可开链式连贯 |
+| fl2v | fl2va | 多组首尾帧；可开链式连贯 |
+| fl_chain | fl2va | fl2v + 链式连贯常开 |
+| i2v | ref2va | 参考图生视频；可开链式连贯 |
+| r2v | ref2va | 素材组；可开链式连贯（参考图 9→8） |
+| v2v | ref2va | 上传源视频，分段改写 |
+| rv2v | ref2va | 源视频 + 参考图/音频 |
+
+CLIP Loader 的 **type 必须选 `minimax`**。
+
+## 推荐工作流
+
+`ComfyUI/custom_nodes/ComfyUI_MiniMaxH3_Director/example_workflows/`
+
+- `完整版_MiniMaxH3导演台.json`
+- `完整版_MiniMaxH3导演台_文生视频_t2v.json`
+- `完整版_MiniMaxH3导演台_首尾帧_fl2v.json`
+- `完整版_MiniMaxH3导演台_参考主体_r2v.json`
+- `完整版_MiniMaxH3导演台_视频改视频_v2v.json`
+- `完整版_MiniMaxH3导演台_参考改视频_rv2v.json`
+
+## 加速节点（已接入示例工作流）
+
+```
+UNETLoader → SageAttention(KJ) → TE-Speed-MiniMaxH3 → EasyCache → MiniMaxH3Director(model)
+```
+
+### SageAttention（KJNodes：`PathchSageAttentionKJ`）
+- 依赖：`comfyui-kjnodes` + 已安装 `sageattention` 库  
+- 推荐：`sageattn_qk_int8_pv_fp16_cuda`（RTX 40 系）；也可 `auto`  
+- `allow_compile=false`  
+- 关闭：旁路该节点，或模式设为 `disabled`  
+
+### TE-Speed-MiniMaxH3
+- 依赖：`custom_nodes/TE-Speed-MiniMaxH3`  
+- 默认：`processing_control_value=0.12`，窗口 `0.1`～`0.9`，`mcs=2`，`device=auto`  
+- 关闭：旁路，或强度设为 `0`  
+
+### EasyCache（ComfyUI 内置）
+- 默认：`reuse_threshold=0.2`，`start_percent=0.15`，`end_percent=0.95`  
+- 阈值越大越快、画质风险越高；不稳可降到 `0.1`  
+- 关闭：旁路，或 `reuse_threshold=0`  
+
+## 使用步骤
+
+1. **重启 ComfyUI**  
+2. 打开完整版工作流  
+3. 对照画布上 **「导演台 · 使用流程」** 说明节点操作工作台与加速参数  
+4. 编排完成 → Queue  

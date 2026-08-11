@@ -1,0 +1,9 @@
+d88b5fd7c61e706566cbb42744e33e82f4b6e9ea585f687bfdbd989ab7c6045e  comfyui/tutu-t8-minimax-h3-av-20to8-nfe-lora-step000100-bf16-comfyui.safetensors
+0709bd8345a5cdc2851fdbd1b66187f69d7e324b7e8883dde5cce40ec613e8c6  comfyui/tutu-t8-minimax-h3-av-20to8-nfe-lora-step000200-bf16-comfyui.safetensors
+8789aeedd9feedc93babf3643042a86c4256f8b95dbf5d6918a6c89a896a03d3  comfyui/tutu-t8-minimax-h3-av-20to8-nfe-lora-step000300-bf16-comfyui.safetensors
+4c1c78987ac4c1448f148859b56dda6e9bcf2e81b51df98c43f191ce47f13748  diffusers/tutu-t8-minimax-h3-av-20to8-nfe-lora-step000100/pytorch_lora_weights.safetensors
+4a6973b6de3bbca45bd8362d879d751024c010c101fe5df751cef471a02d5e5b  diffusers/tutu-t8-minimax-h3-av-20to8-nfe-lora-step000100/adapter_config.json
+8a2b28afca2ad1ee14a294322270c4e377cfb7444f50ac5fc9181c44b4b9ebb4  diffusers/tutu-t8-minimax-h3-av-20to8-nfe-lora-step000200/pytorch_lora_weights.safetensors
+4a6973b6de3bbca45bd8362d879d751024c010c101fe5df751cef471a02d5e5b  diffusers/tutu-t8-minimax-h3-av-20to8-nfe-lora-step000200/adapter_config.json
+f8cdbf7470c1c0e9a166dd9bf37efb14d38cafcd24344a66379ab3ac8eb44664  diffusers/tutu-t8-minimax-h3-av-20to8-nfe-lora-step000300/pytorch_lora_weights.safetensors
+4a6973b6de3bbca45bd8362d879d751024c010c101fe5df751cef471a02d5e5b  diffusers/tutu-t8-minimax-h3-av-20to8-nfe-lora-step000300/adapter_config.json
