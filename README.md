@@ -3,12 +3,10 @@
 基于 **ComfyUI 官方 MiniMax-H3** 的多段音视频导演台（完整版）。  
 在一个节点里完成：分镜计划 → 提示词扩写 → 参考图/首尾帧 → 链式连贯 → 采样出片 → 分段/合并导出。
 
-**当前作者：若扶清**（QQ：3193470083）——在 [AI搅拌手 / AIMixer](https://github.com/AIMixer) 原作基础上参考并继续完善。
+**当前作者：若扶清**（QQ：3193470083）
 **教学视频**【8月8日】 https://www.bilibili.com/video/BV1jquV6ZECw/?share_source=copy_web&vd_source=e1f6b23b2ae0b6629d86664b684e861b
 **English** → [README_EN.md](README_EN.md)
-
-<img width="1018" height="813" alt="屏幕截图 2026-08-07 124125" src="https://github.com/user-attachments/assets/ca9d8190-0b81-40a8-91f9-6ec2280a2174" />
-
+<img width="807" height="806" alt="image" src="https://github.com/user-attachments/assets/79b9dcb0-1fed-495d-8284-4a7e3a02d587" />
 
 ---
 
@@ -116,7 +114,9 @@
 | `r2v` | ref2va | 素材组（图/音/视频）；可开链式连贯 |
 | `v2v` | ref2va | 上传源视频，分段改写 |
 | `rv2v` | ref2va | 源视频 + 参考图/音频 |
-
+| `film` | ref2va | 电影模式 |
+| `novel` | ref2va | 小说模式 |
+| `m2v` | ref2va | 动作迁移 |
 ---
 
 ## 环境要求
@@ -207,11 +207,11 @@ pip install -r comfyui_Automated-All-in-One-Director/requirements.txt
 
 ## 致谢
 
-- **AI搅拌手 / AIMixer** — 本插件的原始作者与前期实现参考  
+- **AI搅拌手 / AIMixer** -本插件以及节点的思路引导 
 - [Comfy-Org / ComfyUI](https://github.com/Comfy-Org/ComfyUI) — 官方 MiniMax H3 支持  
 - [MiniMax-AI](https://github.com/MiniMax-AI) — MiniMax H3 模型  
 - [Comfy-Org/MiniMax-H3](https://huggingface.co/Comfy-Org/MiniMax-H3) — 权重与文档  
 - 提示词规范对齐官方 [h3-prompt-writing](https://github.com/MiniMax-AI/MiniMax-H3/tree/main/skills/h3-prompt-writing)
 ## 为爱发电，如果本项目对你有帮助，欢迎打赏支持，你的赞助会激励我持续维护迭代。
-<img width="600" height="900" alt="1786075489438" src="https://github.com/user-attachments/assets/7a87ddbb-03ff-4a63-b814-952c589affc3" /> <img width="600" height="900" alt="mm_facetoface_collect_qrcode_1786075514098" src="https://github.com/user-attachments/assets/6313aaf0-3893-4dea-baa1-fa9a794caf9e" />
+<img width="400" height="600" alt="1786075489438" src="https://github.com/user-attachments/assets/7a87ddbb-03ff-4a63-b814-952c589affc3" /> <img width="400" height="600" alt="mm_facetoface_collect_qrcode_1786075514098" src="https://github.com/user-attachments/assets/6313aaf0-3893-4dea-baa1-fa9a794caf9e" />
 
